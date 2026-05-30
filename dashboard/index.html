@@ -568,6 +568,9 @@ async function sendChat(p){
   const text=input.value.trim();if(!text)return;
   input.value='';input.style.height='auto';
   addMsg(p,'user',text);
+  const chat=document.getElementById(`chat-${p}`);
+  const loader=document.createElement('div');loader.className='msg assistant';loader.innerHTML='<span class="loading-dots">Думаю</span>';
+  chat.appendChild(loader);chat.scrollTop=chat.scrollHeight;
   document.getElementById(`val-claude`).textContent='thinking';
   setDot('claude',null);
   let jCtx='';
@@ -576,8 +579,9 @@ async function sendChat(p){
   try{
     const r=await fetch(`${P}/claude`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system:sys,message:text})});
     const d=await r.json();
-    addMsg(p,'assistant',(d.content||[]).map(i=>i.text||'').join(''));
-  }catch(e){addMsg(p,'assistant','Ошибка: '+e.message);}
+    const reply=(d.content||[]).map(i=>i.text||'').join('');
+    loader.textContent=reply;sessions[p].push({role:'assistant',content:reply});
+  }catch(e){loader.textContent='Ошибка: '+e.message;}
   setDot('claude',null);document.getElementById('val-claude').textContent='idle';
 }
 
