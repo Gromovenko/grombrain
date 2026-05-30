@@ -606,12 +606,12 @@ async function doExecute(p){
   const rb=document.getElementById(`result-${p}`),rt=document.getElementById(`rtxt-${p}`);
   document.getElementById(`rlbl-${p}`).textContent='выполнение';rb.classList.add('open');rt.innerHTML='<span class="loading-dots">Выполняю</span>';
   setDot('claude',null);document.getElementById('val-claude').textContent='running';
-  const ver='v'+(Date.now()%100000);
+  const ver='EU-v'+(Date.now()%100000);
   try{
-    await fetch(`${P}/journal/${p}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:ver,task,approach:'[exec]',journal_type:'test'})});
     const r=await fetch(`${P}/execute`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project:p,task})});
     const d=await r.json();rt.textContent=d.result||d.error||'выполнено';
     addMsg(p,'assistant',d.result||d.error||'выполнено');
+    if(d.result)await fetch(`${P}/journal/${p}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:ver,task,approach:'[exec]',target_server:'eu'})});
   }catch(e){rt.textContent='Ошибка: '+e.message;}
   setDot('claude',null);document.getElementById('val-claude').textContent='idle';
   loadJournal(p);
@@ -621,10 +621,12 @@ async function doDeploy(p){
   const rb=document.getElementById(`result-${p}`),rt=document.getElementById(`rtxt-${p}`);
   document.getElementById(`rlbl-${p}`).textContent='деплой';rb.classList.add('open');rt.innerHTML='<span class="loading-dots">Деплою</span>';
   setDot('claude',null);document.getElementById('val-claude').textContent='deploying';
+  const srv=projects.find(x=>x.name===p)?.prod_server||'ru';
+  const ver=srv.toUpperCase()+'-v'+(Date.now()%100000);
   try{
     const r=await fetch(`${P}/deploy`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project:p})});
     const d=await r.json();rt.textContent=d.result||d.error;
-    await fetch(`${P}/journal/${p}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:'deploy',task:'Деплой фронта',approach:'[deploy]',journal_type:'prod'})});
+    if(d.ok)await fetch(`${P}/journal/${p}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:ver,task:'Деплой фронта',approach:'[deploy]',target_server:srv})});
   }catch(e){rt.textContent='Ошибка: '+e.message;}
   setDot('claude',null);document.getElementById('val-claude').textContent='idle';
   loadJournal(p);
@@ -649,7 +651,7 @@ async function loadJournal(p){
   try{
     const r=await fetch(`${P}/journal/${p}`);let rows=await r.json();if(!Array.isArray(rows))rows=[];
     const type=jtype[p]||'test';
-    const filtered=rows.filter(row=>type==='prod'?(row.approach==='[deploy]'):(row.approach!=='[deploy]'));
+    const filtered=rows.filter(row=>type==='prod'?(row.target_server==='ru'||(!row.target_server&&row.approach==='[deploy]')):(row.target_server==='eu'||(!row.target_server&&row.approach!=='[deploy]')));
     if(!filtered.length){j.innerHTML='<div class="empty">Записей нет</div>';return;}
     const color=projects.find(x=>x.name===p)?.color||'#333';
     j.innerHTML=filtered.map(row=>{
