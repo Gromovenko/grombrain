@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Command Center</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#f5f5f3;font-family:'Inter',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* HEADER */
+.hdr{background:#fff;border-bottom:1px solid #e5e5e0;padding:0 16px;display:flex;align-items:center;height:48px;flex-shrink:0;gap:12px}
+.logo{display:flex;align-items:center;gap:8px;padding-right:14px;border-right:1px solid #e5e5e0;height:100%;flex-shrink:0}
+.logo-mark{width:24px;height:24px;background:#111;border-radius:5px;display:flex;align-items:center;justify-content:center}
+.logo-mark svg{width:12px;height:12px;fill:#fff}
+.logo-text{font-size:13px;font-weight:600;color:#111}
+
+/* PROJECT TABS */
+.proj-tabs{display:flex;gap:2px;flex:1;overflow-x:auto;padding:0 4px}
+.proj-tabs::-webkit-scrollbar{display:none}
+.ptab{padding:5px 14px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;background:transparent;color:#888;white-space:nowrap;transition:all 0.15s;flex-shrink:0}
+.ptab:hover{background:#f0f0ec;color:#333}
+.ptab.active{color:#fff}
+.ptab-new{background:#f0f0ec!important;color:#666!important;margin-left:4px}
+.ptab-new.active{background:#111!important;color:#fff!important}
+
+.hdr-right{display:flex;align-items:center;gap:6px;padding-left:14px;border-left:1px solid #e5e5e0;height:100%;flex-shrink:0}
+.clock{font-family:'JetBrains Mono',monospace;font-size:11px;color:#aaa}
+.icon-btn{padding:4px 9px;border-radius:6px;font-size:11px;cursor:pointer;border:none;font-family:'Inter',sans-serif;background:#f0f0ec;color:#666;font-weight:500}
+.icon-btn:hover{background:#e8e8e4}
+
+/* STATUSBAR */
+.sb{background:#fafafa;border-bottom:1px solid #e5e5e0;display:flex;flex-shrink:0;overflow-x:auto}
+.sb::-webkit-scrollbar{display:none}
+.si{padding:5px 12px;display:flex;align-items:center;gap:5px;border-right:1px solid #e5e5e0;font-size:10px;white-space:nowrap;flex-shrink:0}
+.dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.dg{background:#1D9E75}.dr{background:#E24B4A}.dy{background:#BA7517}
+.si-label{color:#aaa}
+.si-val{font-weight:500;font-family:'JetBrains Mono',monospace;font-size:10px;margin-left:2px}
+.vg{color:#0F6E56}.vr{color:#A32D2D}.vy{color:#854F0B}
+
+/* MAIN */
+.main{flex:1;overflow:hidden;position:relative}
+
+/* PANEL — full screen */
+.panel{position:absolute;inset:0;display:none;flex-direction:row;background:#fff}
+.panel.active{display:flex}
+
+/* LEFT — chat */
+.panel-left{width:50%;border-right:1px solid #e5e5e0;display:flex;flex-direction:column;overflow:hidden}
+.panel-right{width:50%;display:flex;flex-direction:column;overflow:hidden}
+
+/* PANEL HEADER */
+.phead{padding:10px 16px;border-bottom:1px solid #e5e5e0;display:flex;align-items:center;gap:8px;flex-shrink:0;background:#fafafa}
+.plogo{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;color:#fff}
+.pinfo{flex:1}
+.pname{font-size:12px;font-weight:600}
+.purl{font-size:10px;color:#aaa;font-family:'JetBrains Mono',monospace}
+.pbadge{font-size:9px;padding:2px 6px;border-radius:20px;font-weight:500;flex-shrink:0}
+.bru{background:#ffeaea;color:#A32D2D}.beu{background:#eaefff;color:#185FA5}
+
+/* MODEL SWITCH */
+.model-sw{display:flex;gap:3px;padding:8px 16px;border-bottom:1px solid #e5e5e0;flex-shrink:0;background:#fff}
+.mbtn{padding:3px 10px;border-radius:5px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid #e5e5e0;background:#fff;color:#888;font-family:'Inter',sans-serif}
+.mbtn.active{background:#111;color:#fff;border-color:#111}
+
+/* CHAT */
+.chat-msgs{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.msg{padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.msg.user{background:#f0f0ec;color:#333;align-self:flex-end;max-width:85%}
+.msg.assistant{background:#fff;border:1px solid #e5e5e0;color:#333;align-self:flex-start;max-width:90%}
+.msg.sys{background:#fafafa;color:#aaa;font-size:11px;text-align:center;border-radius:4px;align-self:center}
+.chat-bottom{padding:10px 16px;border-top:1px solid #e5e5e0;flex-shrink:0;background:#fff}
+.chat-input{width:100%;border:1px solid #e5e5e0;border-radius:8px;padding:9px 11px;font-family:'Inter',sans-serif;font-size:13px;resize:none;outline:none;background:#fafafa;line-height:1.5;min-height:38px;max-height:140px;overflow-y:auto;display:block}
+.chat-input:focus{border-color:#c0c0b8;background:#fff}
+.chat-actions{display:flex;gap:6px;margin-top:7px}
+.btn{padding:7px 13px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;transition:opacity 0.2s}
+.btn:hover{opacity:0.85}.btn:disabled{opacity:0.4;cursor:not-allowed}
+.btn-send{background:#111;color:#fff;flex:1}
+.btn-analyze{background:#f0f0ec;color:#333;flex:1}
+.btn-exec{background:#111;color:#fff;flex:1}
+.btn-deploy{background:#1D9E75;color:#fff;flex:1}
+.btn-test{background:#f0eeff;color:#3C3489;flex:1}
+
+/* RIGHT PANEL TABS */
+.right-tabs{display:flex;gap:0;border-bottom:1px solid #e5e5e0;flex-shrink:0;background:#fafafa}
+.rtab{padding:8px 14px;font-size:11px;font-weight:500;cursor:pointer;color:#aaa;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.rtab.active{color:#111;border-bottom-color:#111;background:#fff}
+
+.right-body{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+
+/* SETTINGS */
+.stoggle{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:#fafafa;border:1px solid #e5e5e0;border-radius:7px;cursor:pointer;font-size:12px;color:#666;font-weight:500;flex-shrink:0}
+.stoggle:hover{background:#f0f0ec}
+.sbody{display:none;flex-direction:column;gap:6px;margin-top:6px}
+.sbody.open{display:flex}
+.s-ta{width:100%;border:1px solid #e5e5e0;border-radius:7px;padding:7px 10px;font-family:'Inter',sans-serif;font-size:12px;color:#333;resize:none;outline:none;background:#fafafa;line-height:1.5}
+.s-ta:focus{border-color:#c0c0b8;background:#fff}
+.s-save{padding:5px 12px;border-radius:6px;background:#111;color:#fff;border:none;font-size:11px;font-weight:500;cursor:pointer;align-self:flex-end}
+
+/* RESULT */
+.result{background:#f5f5f3;border-radius:7px;padding:8px 11px;display:none}
+.result.open{display:block}
+.result-lbl{font-size:10px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px}
+.result-text{font-size:11px;font-family:'JetBrains Mono',monospace;color:#333;white-space:pre-wrap;line-height:1.5;max-height:200px;overflow-y:auto}
+
+/* JOURNAL */
+.j-tabs{display:flex;gap:3px;margin-bottom:8px}
+.jtab{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;background:#f0f0ec;color:#999}
+.jtab.active{background:#111;color:#fff}
+.je{padding:7px 0;border-bottom:1px solid #f0f0ec}
+.je:last-child{border-bottom:none}
+.je-meta{display:flex;align-items:center;gap:6px;margin-bottom:2px}
+.je-time{font-size:10px;color:#bbb;font-family:'JetBrains Mono',monospace}
+.je-ver{font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace}
+.je-tag{font-size:9px;padding:1px 5px;border-radius:4px;background:#111;color:#fff}
+.je-tag.dp{background:#1D9E75}
+.je-task{font-size:12px;color:#333}
+.je-appr{font-size:11px;color:#bbb;margin-top:1px}
+
+/* UPLOAD */
+.upzone{border:2px dashed #e5e5e0;border-radius:7px;padding:8px;text-align:center;cursor:pointer}
+.upzone:hover{border-color:#c0c0b8;background:#fafafa}
+
+/* KNOWLEDGE */
+.kn-item{background:#fafafa;border:1px solid #e5e5e0;border-radius:7px;padding:8px 10px;margin-bottom:6px}
+.kn-t{font-size:12px;font-weight:600;color:#333;margin-bottom:2px}
+.kn-c{font-size:11px;color:#666;line-height:1.5}
+.kn-g{font-size:10px;color:#185FA5;margin-top:3px;font-family:'JetBrains Mono',monospace}
+.kn-add{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.kn-inp{border:1px solid #e5e5e0;border-radius:6px;padding:6px 9px;font-family:'Inter',sans-serif;font-size:12px;outline:none;background:#fafafa;width:100%}
+.kn-inp:focus{border-color:#c0c0b8}
+
+/* TUNNEL */
+.trow{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f0f0ec;font-size:12px}
+.trow:last-child{border-bottom:none}
+.tkey{color:#888;flex-shrink:0;min-width:90px}
+.tval{font-family:'JetBrains Mono',monospace;font-size:11px;color:#333;font-weight:500;text-align:right;word-break:break-all;flex:1;margin-left:8px}
+.cpbtn{padding:2px 6px;border:1px solid #e5e5e0;border-radius:4px;background:#fff;color:#888;font-size:9px;cursor:pointer;margin-left:6px;flex-shrink:0}
+.tsection{font-size:10px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:0.08em;margin:10px 0 5px;padding-bottom:4px;border-bottom:1px solid #e5e5e0}
+
+/* DOMAINS */
+.dom-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.dcard{background:#fafafa;border:1px solid #e5e5e0;border-radius:7px;padding:8px 10px}
+.dname{font-size:11px;font-weight:600;font-family:'JetBrains Mono',monospace;margin-bottom:4px}
+.drow{display:flex;justify-content:space-between;font-size:10px;padding:2px 0}
+.dkey{color:#aaa}.dval{font-weight:500;color:#333}
+.dok{color:#0F6E56}.dwait{color:#854F0B}
+
+/* NEW PROJECT */
+.np-form{display:flex;flex-direction:column;gap:9px}
+.np-lbl{font-size:10px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px;display:block}
+.np-inp{width:100%;border:1px solid #e5e5e0;border-radius:7px;padding:7px 10px;font-family:'Inter',sans-serif;font-size:13px;outline:none;background:#fafafa}
+.srv-sel{display:flex;gap:6px}
+.sopt{flex:1;padding:7px;border:1.5px solid #e5e5e0;border-radius:7px;text-align:center;cursor:pointer}
+.sopt.sel-ru{border-color:#E24B4A;background:#fff8f8}
+.sopt.sel-eu{border-color:#185FA5;background:#f8fbff}
+.snm{font-size:12px;font-weight:600}
+.sip{font-size:10px;font-family:'JetBrains Mono',monospace;color:#aaa}
+.np-create{padding:9px;border-radius:7px;background:#111;color:#fff;border:none;font-size:13px;font-weight:500;cursor:pointer;width:100%}
+
+/* MODAL */
+.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-ov.open{display:flex}
+.modal{background:#fff;border-radius:12px;width:88vw;max-width:820px;max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-hdr{padding:13px 18px;border-bottom:1px solid #e5e5e0;display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:14px;font-weight:600}
+.modal-close{width:25px;height:25px;border:none;background:#f0f0ec;border-radius:5px;cursor:pointer;font-size:15px}
+.modal-body{flex:1;overflow-y:auto;padding:16px}
+.tree-srv{background:#fafafa;border:1px solid #e5e5e0;border-radius:8px;padding:10px 13px;margin-bottom:8px}
+.tree-hd{font-size:13px;font-weight:600;color:#333;display:flex;align-items:center;gap:7px;margin-bottom:7px;font-family:'Inter',sans-serif}
+.tree-br{padding:4px 0 4px 14px;display:flex;align-items:center;gap:6px;font-size:11px;border-left:1px solid #e5e5e0;margin-left:7px}
+.tdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.tdg{background:#1D9E75}.tdr{background:#E24B4A}.tdy{background:#BA7517}
+.tmeta{color:#aaa;font-size:10px;margin-left:auto}
+.tmg{color:#0F6E56}
+.db-tbl{width:100%;border-collapse:collapse;font-size:11px;margin:4px 0 0 14px}
+.db-tbl th{text-align:left;color:#aaa;padding:2px 6px;border-bottom:1px solid #e5e5e0}
+.db-tbl td{padding:2px 6px;border-bottom:1px solid #f5f5f3;font-size:10px}
+
+.lbl{font-size:10px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px}
+.empty{font-size:12px;color:#ccc;font-style:italic;padding:6px 0}
+.loading-dots::after{content:'...';animation:dots 1.2s infinite}
+@keyframes dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-thumb{background:#e0e0d8;border-radius:2px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="logo">
+    <div class="logo-mark"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1" opacity="0.5"/><rect x="9" y="2" width="5" height="5" rx="1" opacity="0.5"/><rect x="2" y="9" width="5" height="5" rx="1" opacity="0.5"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg></div>
+    <div class="logo-text">CC</div>
+  </div>
+  <div class="proj-tabs" id="proj-tabs"></div>
+  <div class="hdr-right">
+    <button class="icon-btn" onclick="openInfra()">⚙</button>
+    <span class="clock" id="clock">--:--:--</span>
+  </div>
+</div>
+
+<div class="sb" id="sb"></div>
+
+<div class="main" id="main"></div>
+
+<div class="modal-ov" id="infra-modal" onclick="if(event.target===this)closeInfra()">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title">⚙ Инфраструктура</span><button class="modal-close" onclick="closeInfra()">✕</button></div>
+    <div class="modal-body" id="infra-body"><div style="color:#aaa">Загрузка...</div></div>
+  </div>
+</div>
+
+<script>
+const P='/api';
+let projects=[];
+let activePanel='';
+const sessions={};
+const settings={};
+const jtype={};
+const activeModel={};
+let selSrv=null;
+const MODEL_IDS={sonnet:'claude-sonnet-4-20250514',opus:'claude-opus-4-20250514',haiku:'claude-haiku-4-5-20251001'};
+
+setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('ru-RU');},1000);
+
+async function init(){
+  try{const r=await fetch(`${P}/projects`);projects=await r.json();}catch(e){projects=[];}
+  renderTabs();renderSb();renderPanels();
+  const first=projects[0];
+  if(first) switchPanel(first.name);
+  else switchPanel('__tunnel__');
+  projects.forEach(p=>{sessions[p.name]=[];settings[p.name]={description:'',system_prompt:''};jtype[p.name]='test';activeModel[p.name]='sonnet';loadSettings(p.name);});
+  checkStatus();setInterval(checkStatus,30000);
+}
+
+function renderTabs(){
+  const tabs=document.getElementById('proj-tabs');
+  let h=projects.map(p=>`<button class="ptab" id="tab-${p.name}" onclick="switchPanel('${p.name}')" style="--pc:${p.color}">${p.name}</button>`).join('');
+  h+=`<button class="ptab ptab-new" id="tab-__domains__" onclick="switchPanel('__domains__')">🌐</button>`;
+  h+=`<button class="ptab ptab-new" id="tab-__tunnel__" onclick="switchPanel('__tunnel__')">⚡</button>`;
+  h+=`<button class="ptab ptab-new" id="tab-__new__" onclick="switchPanel('__new__')">+</button>`;
+  tabs.innerHTML=h;
+}
+
+function renderSb(){
+  const sb=document.getElementById('sb');
+  let h=`<div class="si"><div class="dot dy" id="dot-proxy"></div><span class="si-label">Proxy</span><span class="si-val vy" id="val-proxy">—</span></div>`;
+  h+=`<div class="si"><div class="dot dg"></div><span class="si-label">EU</span><span class="si-val vg">147.45.75.59</span></div>`;
+  h+=`<div class="si"><div class="dot dg"></div><span class="si-label">RU</span><span class="si-val vg">80.249.150.234</span></div>`;
+  projects.forEach(p=>{h+=`<div class="si"><div class="dot dy" id="dot-${p.name}"></div><span class="si-label">${p.name}</span><span class="si-val vy" id="val-${p.name}">—</span></div>`;});
+  h+=`<div class="si"><div class="dot dy" id="dot-claude"></div><span class="si-label">Claude</span><span class="si-val vy" id="val-claude">idle</span></div>`;
+  h+=`<div class="si"><div class="dot dg"></div><span class="si-label">WG</span><span class="si-val vg">:51821</span></div>`;
+  h+=`<div class="si"><div class="dot dg"></div><span class="si-label">REALITY</span><span class="si-val vg">:58867</span></div>`;
+  h+=`<div class="si"><div class="dot dg"></div><span class="si-label">WS+TLS</span><span class="si-val vg">:443</span></div>`;
+  sb.innerHTML=h;
+}
+
+function renderPanels(){
+  const main=document.getElementById('main');
+  let h='';
+
+  // Project panels
+  projects.forEach(p=>{
+    const init=p.name.substring(0,2).toUpperCase();
+    const badge=p.prod_server==='ru'?'<span class="pbadge bru">RU</span>':'<span class="pbadge beu">EU</span>';
+    h+=`<div class="panel" id="panel-${p.name}">
+      <!-- LEFT: CHAT -->
+      <div class="panel-left">
+        <div class="phead">
+          <div class="plogo" style="background:${p.color}">${init}</div>
+          <div class="pinfo"><div class="pname" style="color:${p.color}">${p.domain}</div><div class="purl">${p.frontend_repo}</div></div>
+          ${badge}
+        </div>
+        <div class="model-sw">
+          <button class="mbtn active" id="mb-sonnet-${p.name}" onclick="setModel('${p.name}','sonnet')">Sonnet</button>
+          <button class="mbtn" id="mb-opus-${p.name}" onclick="setModel('${p.name}','opus')">Opus</button>
+          <button class="mbtn" id="mb-haiku-${p.name}" onclick="setModel('${p.name}','haiku')">Haiku</button>
+        </div>
+        <div class="chat-msgs" id="chat-${p.name}">
+          <div class="msg sys">Контекст: системный промт + описание + 8 последних записей журнала</div>
+        </div>
+        <div class="chat-bottom">
+          <textarea class="chat-input" id="cin-${p.name}" placeholder="Сообщение... (Enter — отправить)" rows="1"
+            oninput="autoResize(this)"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat('${p.name}')}"></textarea>
+          <div class="chat-actions">
+            <button class="btn btn-send" onclick="sendChat('${p.name}')">→ Отправить</button>
+            <button class="btn btn-analyze" onclick="doAnalyze('${p.name}')">Анализ</button>
+          </div>
+          <div class="chat-actions" style="margin-top:5px">
+            <button class="btn btn-exec" onclick="doExecute('${p.name}')">⚡ Выполнить</button>
+            <button class="btn btn-deploy" onclick="doDeploy('${p.name}')">🚀 Деплой ${p.prod_server.toUpperCase()}</button>
+            <button class="btn btn-test" onclick="doTestRun('${p.name}')">▶ Тест EU</button>
+          </div>
+          <div class="result" id="result-${p.name}" style="margin-top:7px">
+            <div class="result-lbl" id="rlbl-${p.name}">результат</div>
+            <div class="result-text" id="rtxt-${p.name}"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: INFO -->
+      <div class="panel-right">
+        <div class="right-tabs">
+          <div class="rtab active" onclick="switchRtab('${p.name}','journal',this)">Журнал</div>
+          <div class="rtab" onclick="switchRtab('${p.name}','settings',this)">Настройки</div>
+          <div class="rtab" onclick="switchRtab('${p.name}','knowledge',this)">Знания</div>
+          <div class="rtab" onclick="switchRtab('${p.name}','upload',this)">Файлы</div>
+        </div>
+        <div class="right-body">
+
+          <!-- JOURNAL TAB -->
+          <div id="rtab-journal-${p.name}">
+            <div class="j-tabs">
+              <div class="jtab active" onclick="setJtype('${p.name}','test',this)">Тестовый</div>
+              <div class="jtab" onclick="setJtype('${p.name}','prod',this)">Боевой</div>
+            </div>
+            <div id="journal-${p.name}"><div class="empty">Загрузка...</div></div>
+          </div>
+
+          <!-- SETTINGS TAB -->
+          <div id="rtab-settings-${p.name}" style="display:none">
+            <div class="lbl">Описание проекта</div>
+            <textarea class="s-ta" id="sdesc-${p.name}" rows="4" placeholder="Стек, архитектура, цель, ключевые данные..."></textarea>
+            <div class="lbl" style="margin-top:8px">Системный промт</div>
+            <textarea class="s-ta" id="sprompt-${p.name}" rows="5" placeholder="Как Claude работает с этим проектом..."></textarea>
+            <button class="s-save" style="margin-top:8px" onclick="saveSettings('${p.name}')">Сохранить</button>
+          </div>
+
+          <!-- KNOWLEDGE TAB -->
+          <div id="rtab-knowledge-${p.name}" style="display:none">
+            <div class="kn-add">
+              <div class="lbl">Добавить знание</div>
+              <input class="kn-inp" id="knt-${p.name}" placeholder="Заголовок">
+              <textarea class="kn-inp" id="knc-${p.name}" placeholder="Содержание" style="height:50px;resize:none"></textarea>
+              <input class="kn-inp" id="kng-${p.name}" placeholder="теги">
+              <button class="btn btn-exec" style="padding:6px" onclick="addKn('${p.name}')">+ Добавить</button>
+            </div>
+            <div id="knlist-${p.name}"></div>
+          </div>
+
+          <!-- UPLOAD TAB -->
+          <div id="rtab-upload-${p.name}" style="display:none">
+            <div class="upzone" onclick="document.getElementById('upl-${p.name}').click()">
+              <input type="file" id="upl-${p.name}" multiple style="display:none" onchange="uploadFiles('${p.name}',this)">
+              <div style="font-size:13px;color:#aaa;margin-bottom:3px">↑ Загрузить файлы</div>
+              <div style="font-size:11px;color:#bbb">в ${p.frontend_repo}</div>
+              <div style="font-size:11px;color:#1D9E75;margin-top:4px" id="uplres-${p.name}"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>`;
+  });
+
+  // DOMAINS panel
+  h+=`<div class="panel" id="panel-__domains__">
+    <div class="panel-left" style="width:100%;border-right:none">
+      <div class="phead"><span style="font-size:14px;font-weight:600;color:#185FA5">🌐 Домены</span></div>
+      <div class="right-body">
+        <div class="dom-grid">
+          <div class="dcard"><div class="dname">lifeprotocol.ru</div>
+            <div class="drow"><span class="dkey">Сервер</span><span class="dval">RU</span></div>
+            <div class="drow"><span class="dkey">SSL</span><span class="dval dok">2026-07-20</span></div>
+            <div class="drow"><span class="dkey">Порт</span><span class="dval">3001</span></div>
+            <div class="drow"><span class="dkey">DNS</span><span class="dval">рег.ру</span></div></div>
+          <div class="dcard"><div class="dname">letov.lifeprotocol.ru</div>
+            <div class="drow"><span class="dkey">Сервер</span><span class="dval">RU</span></div>
+            <div class="drow"><span class="dkey">SSL</span><span class="dval dok">2026-08-22</span></div>
+            <div class="drow"><span class="dkey">Порт</span><span class="dval">3002</span></div>
+            <div class="drow"><span class="dkey">DNS</span><span class="dval">рег.ру</span></div></div>
+          <div class="dcard"><div class="dname">tunnel.lifeprotocol.online</div>
+            <div class="drow"><span class="dkey">Сервер</span><span class="dval">EU</span></div>
+            <div class="drow"><span class="dkey">SSL</span><span class="dval dok">2026-08-07</span></div>
+            <div class="drow"><span class="dkey">Тип</span><span class="dval">VLESS туннель</span></div></div>
+          <div class="dcard"><div class="dname">soundrussian.uz</div>
+            <div class="drow"><span class="dkey">Сервер</span><span class="dval">EU</span></div>
+            <div class="drow"><span class="dkey">SSL</span><span class="dval dwait">pending</span></div></div>
+          <div class="dcard"><div class="dname">letovtravel.pro</div>
+            <div class="drow"><span class="dkey">SSL</span><span class="dval dwait">ждём DNS</span></div>
+            <div class="drow"><span class="dkey">Порт</span><span class="dval">3002</span></div></div>
+          <div class="dcard"><div class="dname">svezha.ru</div>
+            <div class="drow"><span class="dkey">SSL</span><span class="dval dwait">ждём DNS</span></div>
+            <div class="drow"><span class="dkey">Порт</span><span class="dval">3003</span></div></div>
+          <div class="dcard"><div class="dname">legalvision.ru</div>
+            <div class="drow"><span class="dkey">SSL</span><span class="dval dwait">ждём DNS</span></div>
+            <div class="drow"><span class="dkey">Порт</span><span class="dval">3004</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // TUNNEL panel
+  h+=`<div class="panel" id="panel-__tunnel__">
+    <div class="panel-left" style="width:50%;border-right:1px solid #e5e5e0">
+      <div class="phead"><span style="font-size:14px;font-weight:600;color:#3C3489">⚡ Туннели</span></div>
+      <div class="right-body">
+        <div class="tsection">1. WireGuard RU→EU (основной, белые списки)</div>
+        <div class="trow"><span class="tkey">Хост</span><span class="tval">80.249.150.234:51821</span></div>
+        <div class="trow"><span class="tkey">Интерфейс</span><span class="tval">wg1</span></div>
+        <div class="trow"><span class="tkey">Клиенты</span><span class="tval">grom→10.20.0.2, vika→10.20.0.3, sasha→10.20.0.4, mama→10.20.0.5, eva→10.20.0.6</span></div>
+        <div class="trow"><span class="tkey">Pub ключ</span><span class="tval" style="font-size:9px">avYjwYOlcdj5YR7W7bO5rbpB5BIlRnwwm0L3Mfcfrgs=</span></div>
+        <div class="trow"><span class="tkey">Особенность</span><span class="tval">выход через EU IP, работает при белых списках</span></div>
+
+        <div class="tsection">2. VLESS+REALITY (мобильный, без белых списков)</div>
+        <div class="trow"><span class="tkey">Хост</span><span class="tval">147.45.75.59:58867</span></div>
+        <div class="trow"><span class="tkey">UUID</span><div style="display:flex;align-items:center;flex:1;justify-content:flex-end"><span class="tval" style="font-size:9px">a3705e06-306e-4480-83ec-f26b8f757d8f</span><button class="cpbtn" onclick="cp('a3705e06-306e-4480-83ec-f26b8f757d8f')">copy</button></div></div>
+        <div class="trow"><span class="tkey">PubKey</span><span class="tval" style="font-size:9px">e_cObdnPvAfmBJIVXV74hNeLLCFyBHt6GJzflZLHzlg</span></div>
+        <div class="trow"><span class="tkey">SNI</span><span class="tval">amazon.nl</span></div>
+        <div class="trow"><span class="tkey">Flow</span><span class="tval">xtls-rprx-vision</span></div>
+        <div class="trow"><span class="tkey">Клиент</span><span class="tval">Hiddify (Mac/iOS), v2rayNG (Android)</span></div>
+
+        <div class="tsection">3. VLESS+WS+TLS via Cloudflare (проводной, без белых списков)</div>
+        <div class="trow"><span class="tkey">UUID</span><div style="display:flex;align-items:center;flex:1;justify-content:flex-end"><span class="tval" style="font-size:9px">ad37e149-c4f0-441a-8cf9-32e273864d87</span><button class="cpbtn" onclick="cp('ad37e149-c4f0-441a-8cf9-32e273864d87')">copy</button></div></div>
+        <div class="trow"><span class="tkey">Домен</span><span class="tval">tunnel.lifeprotocol.online:443</span></div>
+        <div class="trow"><span class="tkey">Path</span><span class="tval">/ws</span></div>
+        <div class="trow"><span class="tkey">SSL</span><span class="tval" style="color:#1D9E75">OK · 2026-08-07</span></div>
+        <div class="trow"><span class="tkey">Ссылка</span><button class="cpbtn" onclick="cp('vless://ad37e149-c4f0-441a-8cf9-32e273864d87@tunnel.lifeprotocol.online:443/?type=ws&encryption=none&path=%2Fws&host=tunnel.lifeprotocol.online&security=tls&sni=tunnel.lifeprotocol.online#cf-tunnel')">copy vless://</button></div>
+
+        <div class="tsection">4. Hysteria2+Salamander (UDP, проводной)</div>
+        <div class="trow"><span class="tkey">Хост</span><span class="tval">147.45.75.59:1194/UDP</span></div>
+        <div class="trow"><span class="tkey">Пароль</span><span class="tval">66e37f85</span></div>
+        <div class="trow"><span class="tkey">obfs</span><span class="tval">ced5641d</span></div>
+      </div>
+    </div>
+    <div class="panel-right" style="border-left:1px solid #e5e5e0">
+      <div class="phead"><span style="font-size:13px;font-weight:600">3X-UI Панель</span></div>
+      <div class="right-body">
+        <div class="trow"><span class="tkey">URL</span><div style="display:flex;align-items:center;flex:1;justify-content:flex-end"><span class="tval" style="font-size:9px">147.45.75.59:54321/kiwChGfrrQCCWRfAxe/</span><button class="cpbtn" onclick="cp('http://147.45.75.59:54321/kiwChGfrrQCCWRfAxe/')">copy</button></div></div>
+        <div class="trow"><span class="tkey">Логин</span><span class="tval">grom</span></div>
+        <div class="trow"><span class="tkey">Пароль</span><span class="tval">Grom2026x</span></div>
+        <div style="margin-top:16px">
+          <div class="tsection">Split tunneling</div>
+          <div class="trow"><span class="tkey">Принцип</span><span class="tval">RU сайты — прямо, всё остальное — туннель</span></div>
+          <div class="trow"><span class="tkey">Статус</span><span class="tval dwait">настроить в клиентах</span></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // NEW PROJECT panel
+  h+=`<div class="panel" id="panel-__new__">
+    <div class="panel-left" style="width:100%;border-right:none">
+      <div class="phead"><span style="font-size:14px;font-weight:600">+ Новый проект</span></div>
+      <div class="right-body" style="max-width:480px">
+        <div class="np-form">
+          <div><label class="np-lbl">Название</label><input class="np-inp" id="np-name" placeholder="myproject"></div>
+          <div><label class="np-lbl">Домен</label><input class="np-inp" id="np-domain" placeholder="myproject.ru"></div>
+          <div><label class="np-lbl">Боевой сервер</label>
+            <div class="srv-sel">
+              <div class="sopt" id="opt-ru" onclick="selSrv='ru';document.getElementById('opt-ru').className='sopt sel-ru';document.getElementById('opt-eu').className='sopt'">
+                <div class="snm" style="color:#A32D2D">RU</div><div class="sip">80.249.150.234</div></div>
+              <div class="sopt" id="opt-eu" onclick="selSrv='eu';document.getElementById('opt-eu').className='sopt sel-eu';document.getElementById('opt-ru').className='sopt'">
+                <div class="snm" style="color:#185FA5">EU</div><div class="sip">147.45.75.59</div></div>
+            </div>
+          </div>
+          <div><label class="np-lbl">Фронт-репо</label><input class="np-inp" id="np-frepo" placeholder="myproject-app"></div>
+          <div><label class="np-lbl">Дата-репо</label><input class="np-inp" id="np-drepo" placeholder="myproject-data"></div>
+          <div><label class="np-lbl">Порт</label><input class="np-inp" id="np-port" placeholder="3004" type="number"></div>
+          <button class="np-create" onclick="createProject()">⚡ Создать</button>
+          <div class="result" id="create-result"><div class="result-lbl">создание</div><div class="result-text" id="create-result-text"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  main.innerHTML=h;
+}
+
+// ===== NAVIGATION =====
+function switchPanel(name){
+  activePanel=name;
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
+  const panel=document.getElementById(`panel-${name}`);
+  if(panel) panel.classList.add('active');
+  const tab=document.getElementById(`tab-${name}`);
+  if(tab){
+    tab.classList.add('active');
+    if(name.startsWith('__')) tab.style.background='#111';
+    else{ const p=projects.find(x=>x.name===name); if(p) tab.style.background=p.color; }
+    tab.style.color='#fff';
+  }
+  if(!name.startsWith('__')) loadJournal(name);
+}
+
+function switchRtab(proj,tab,el){
+  ['journal','settings','knowledge','upload'].forEach(t=>{
+    const e=document.getElementById(`rtab-${t}-${proj}`);
+    if(e) e.style.display=t===tab?'block':'none';
+  });
+  document.querySelectorAll(`#panel-${proj} .rtab`).forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  if(tab==='knowledge') loadKn(proj);
+}
+
+// ===== STATUS =====
+function setDot(id,ok){
+  const d=document.getElementById('dot-'+id),v=document.getElementById('val-'+id);
+  if(!d||!v)return;
+  d.className='dot '+(ok===true?'dg':ok===false?'dr':'dy');
+  v.className='si-val '+(ok===true?'vg':ok===false?'vr':'vy');
+}
+
+async function checkStatus(){
+  try{const r=await fetch(`${P}/projects`,{signal:AbortSignal.timeout(4000)});if(r.ok){setDot('proxy',true);document.getElementById('val-proxy').textContent='ok';}}
+  catch(e){setDot('proxy',false);document.getElementById('val-proxy').textContent='down';}
+  for(const p of projects){
+    try{const r=await fetch(`${P}/journal/${p.name}`,{signal:AbortSignal.timeout(4000)});const rows=await r.json();setDot(p.name,true);if(Array.isArray(rows))document.getElementById(`val-${p.name}`).textContent=rows.length+' зап.';}
+    catch(e){setDot(p.name,false);}
+  }
+}
+
+// ===== SETTINGS =====
+async function loadSettings(p){
+  try{
+    const r=await fetch(`${P}/projects`);const list=await r.json();
+    const proj=list.find(x=>x.name===p);
+    if(proj){
+      if(proj.description){document.getElementById(`sdesc-${p}`).value=proj.description;settings[p].description=proj.description;}
+      if(proj.system_prompt){document.getElementById(`sprompt-${p}`).value=proj.system_prompt;settings[p].system_prompt=proj.system_prompt;}
+    }
+  }catch(e){}
+}
+
+async function saveSettings(p){
+  const description=document.getElementById(`sdesc-${p}`).value;
+  const system_prompt=document.getElementById(`sprompt-${p}`).value;
+  settings[p].description=description;settings[p].system_prompt=system_prompt;
+  const btn=document.querySelector(`#rtab-settings-${p} .s-save`);
+  if(btn)btn.textContent='Сохраняю...';
+  try{
+    const r=await fetch(`${P}/projects/${p}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({description,system_prompt})});
+    const d=await r.json();
+    if(btn)btn.textContent=d.ok?'✓ Сохранено':'Ошибка';
+    setTimeout(()=>{if(btn)btn.textContent='Сохранить';},2000);
+  }catch(e){if(btn)btn.textContent='Ошибка';}
+}
+
+// ===== MODEL =====
+function setModel(p,model){
+  activeModel[p]=model;
+  ['sonnet','opus','haiku'].forEach(m=>{const b=document.getElementById(`mb-${m}-${p}`);if(b)b.className='mbtn'+(m===model?' active':'');});
+}
+
+// ===== CHAT =====
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,140)+'px';}
+
+function addMsg(p,role,content){
+  sessions[p].push({role,content});
+  const chat=document.getElementById(`chat-${p}`);
+  const div=document.createElement('div');div.className=`msg ${role}`;div.textContent=content;
+  chat.appendChild(div);chat.scrollTop=chat.scrollHeight;
+}
+
+function buildSys(p){
+  const s=settings[p];
+  let sys=s.system_prompt||`Ты технический ассистент проекта ${p}.`;
+  if(s.description) sys+=`\n\nОписание проекта:\n${s.description}`;
+  return sys;
+}
+
+async function sendChat(p){
+  const input=document.getElementById(`cin-${p}`);
+  const text=input.value.trim();if(!text)return;
+  input.value='';input.style.height='auto';
+  addMsg(p,'user',text);
+  document.getElementById(`val-claude`).textContent='thinking';
+  setDot('claude',null);
+  let jCtx='';
+  try{const r=await fetch(`${P}/journal/${p}`);const rows=await r.json();if(Array.isArray(rows)&&rows.length)jCtx='\n\nПоследние действия:\n'+rows.slice(0,8).map(r=>`- ${r.version}: ${r.task}`).join('\n');}catch(e){}
+  const sys=buildSys(p)+jCtx;
+  try{
+    const r=await fetch(`${P}/claude`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system:sys,message:text})});
+    const d=await r.json();
+    addMsg(p,'assistant',(d.content||[]).map(i=>i.text||'').join(''));
+  }catch(e){addMsg(p,'assistant','Ошибка: '+e.message);}
+  setDot('claude',null);document.getElementById('val-claude').textContent='idle';
+}
+
+async function doAnalyze(p){
+  const input=document.getElementById(`cin-${p}`);
+  const task=input.value.trim();if(!task){alert('Введи задачу в поле сообщения');return;}
+  const rb=document.getElementById(`result-${p}`),rt=document.getElementById(`rtxt-${p}`);
+  document.getElementById(`rlbl-${p}`).textContent='анализ';rb.classList.add('open');rt.innerHTML='<span class="loading-dots">Анализирую</span>';
+  setDot('claude',null);document.getElementById('val-claude').textContent='analyzing';
+  try{
+    const r=await fetch(`${P}/claude`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({system:`Ты технический менеджер проекта ${p}. ТОЛЬКО JSON без markdown: {"understanding":"как понял (2-3 предл)","alternatives":[{"num":1,"approach":"подход"},{"num":2,"approach":"подход"},{"num":3,"approach":"подход"}]}`,message:task})});
+    const d=await r.json();const text=(d.content||[]).map(i=>i.text||'').join('');
+    let parsed={};try{parsed=JSON.parse(text.replace(/```json|```/g,'').trim());}catch(e){}
+    let out=parsed.understanding||text;
+    if(parsed.alternatives)out+='\n\nГипотезы:\n'+parsed.alternatives.map(a=>`${a.num}. ${a.approach}`).join('\n');
+    rt.textContent=out;addMsg(p,'user',task);addMsg(p,'assistant',out);input.value='';input.style.height='auto';
+  }catch(e){rt.textContent='Ошибка: '+e.message;}
+  setDot('claude',null);document.getElementById('val-claude').textContent='idle';
+}
+
+async function doExecute(p){
+  const input=document.getElementById(`cin-${p}`);
+  const task=input.value.trim()||sessions[p].filter(m=>m.role==='user').slice(-1)[0]?.content;
+  if(!task){alert('Введи задачу');return;}
+  const rb=document.getElementById(`result-${p}`),rt=document.getElementById(`rtxt-${p}`);
+  document.getElementById(`rlbl-${p}`).textContent='выполнение';rb.classList.add('open');rt.innerHTML='<span class="loading-dots">Выполняю</span>';
+  setDot('claude',null);document.getElementById('val-claude').textContent='running';
+  const ver='v'+(Date.now()%100000);
+  try{
+    await fetch(`${P}/journal/${p}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:ver,task,approach:'[exec]',journal_type:'test'})});
+    const r=await fetch(`${P}/execute`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project:p,task})});
+    const d=await r.json();rt.textContent=d.result||d.error||'выполнено';
+    addMsg(p,'assistant',d.result||d.error||'выполнено');
+  }catch(e){rt.textContent='Ошибка: '+e.message;}
+  setDot('claude',null);document.getElementById('val-claude').textContent='idle';
+  loadJournal(p);
+}
+
+async function doDeploy(p){
+  const rb=document.getElementById(`result-${p}`),rt=document.getElementById(`rtxt-${p}`);
+  document.getElementById(`rlbl-${p}`).textContent='деплой';rb.classList.add('open');rt.innerHTML='<span class="loading-dots">Деплою</span>';
+  setDot('claude',null);document.getElementById('val-claude').textContent='deploying';
+  try{
+    const r=await fetch(`${P}/deploy`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project:p})});
+    const d=await r.json();rt.textContent=d.result||d.error;
+    await fetch(`${P}/journal/${p}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:'deploy',task:'Деплой фронта',approach:'[deploy]',journal_type:'prod'})});
+  }catch(e){rt.textContent='Ошибка: '+e.message;}
+  setDot('claude',null);document.getElementById('val-claude').textContent='idle';
+  loadJournal(p);
+}
+
+async function doTestRun(p){
+  const rb=document.getElementById(`result-${p}`),rt=document.getElementById(`rtxt-${p}`);
+  document.getElementById(`rlbl-${p}`).textContent='тест EU';rb.classList.add('open');rt.innerHTML='<span class="loading-dots">Запускаю</span>';
+  try{const r=await fetch(`${P}/test-run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project:p})});const d=await r.json();rt.textContent=d.result||d.error;}
+  catch(e){rt.textContent='Ошибка: '+e.message;}
+}
+
+// ===== JOURNAL =====
+function setJtype(p,type,el){
+  jtype[p]=type;
+  document.querySelectorAll(`#rtab-journal-${p} .jtab`).forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');loadJournal(p);
+}
+
+async function loadJournal(p){
+  const j=document.getElementById(`journal-${p}`);if(!j)return;
+  try{
+    const r=await fetch(`${P}/journal/${p}`);let rows=await r.json();if(!Array.isArray(rows))rows=[];
+    const type=jtype[p]||'test';
+    const filtered=rows.filter(row=>type==='prod'?(row.approach==='[deploy]'):(row.approach!=='[deploy]'));
+    if(!filtered.length){j.innerHTML='<div class="empty">Записей нет</div>';return;}
+    const color=projects.find(x=>x.name===p)?.color||'#333';
+    j.innerHTML=filtered.map(row=>{
+      const d=new Date(row.created_at);
+      const t=d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+      const dt=d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'});
+      const isDeploy=row.approach==='[deploy]';
+      return `<div class="je"><div class="je-meta"><span class="je-time">${dt} ${t}</span><span class="je-ver" style="color:${color}">${row.version}</span>${isDeploy?'<span class="je-tag dp">деплой</span>':''}</div><div class="je-task">${row.task}</div>${row.approach&&!['[exec]','[deploy]'].includes(row.approach)?`<div class="je-appr">${row.approach}</div>`:''}</div>`;
+    }).join('');
+  }catch(e){j.innerHTML='<div class="empty">Ошибка</div>';}
+}
+
+// ===== KNOWLEDGE =====
+async function loadKn(p){
+  const k=document.getElementById(`knlist-${p}`);if(!k)return;
+  try{const r=await fetch(`${P}/knowledge/${p}`);let rows=await r.json();if(!Array.isArray(rows))rows=[];
+    k.innerHTML=rows.length?rows.map(row=>`<div class="kn-item"><div class="kn-t">${row.title}</div><div class="kn-c">${row.content}</div>${row.tags?`<div class="kn-g">${row.tags}</div>`:''}</div>`).join(''):'<div class="empty">Нет знаний</div>';
+  }catch(e){}
+}
+
+async function addKn(p){
+  const t=document.getElementById(`knt-${p}`).value.trim();
+  const c=document.getElementById(`knc-${p}`).value.trim();
+  const g=document.getElementById(`kng-${p}`).value.trim();
+  if(!t||!c)return;
+  try{await fetch(`${P}/knowledge/${p}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t,content:c,tags:g})});
+    document.getElementById(`knt-${p}`).value='';document.getElementById(`knc-${p}`).value='';document.getElementById(`kng-${p}`).value='';
+    loadKn(p);
+  }catch(e){}
+}
+
+// ===== UPLOAD =====
+async function uploadFiles(p,input){
+  if(!input.files.length)return;
+  const el=document.getElementById(`uplres-${p}`);el.textContent='загрузка...';
+  const fd=new FormData();for(const f of input.files)fd.append('files',f);
+  try{const r=await fetch(`${P}/upload/${p}`,{method:'POST',body:fd});const d=await r.json();el.textContent=d.ok?'✓ '+d.files.length+' файл(ов)':'✕ '+d.error;}
+  catch(e){el.textContent='✕ '+e.message;}input.value='';
+}
+
+// ===== NEW PROJECT =====
+async function createProject(){
+  const name=document.getElementById('np-name').value.trim();
+  const domain=document.getElementById('np-domain').value.trim();
+  const frepo=document.getElementById('np-frepo').value.trim();
+  const drepo=document.getElementById('np-drepo').value.trim();
+  const port=document.getElementById('np-port').value.trim();
+  if(!name||!domain||!selSrv||!frepo){alert('Заполни название, домен, сервер, фронт-репо');return;}
+  const rb=document.getElementById('create-result'),rt=document.getElementById('create-result-text');
+  rb.classList.add('open');rt.innerHTML='<span class="loading-dots">Создаю</span>';
+  const colors=['#1D9E75','#E2784A','#8B47E8','#47A8E8','#E8478B'];
+  try{
+    await fetch(`${P}/projects`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,domain,dev_server:'eu',prod_server:selSrv,frontend_repo:frepo,data_repo:drepo,port:parseInt(port)||3000,color:colors[projects.length%colors.length]})});
+    rt.textContent='✓ Создан. Перезагружаю...';setTimeout(()=>location.reload(),1500);
+  }catch(e){rt.textContent='Ошибка: '+e.message;}
+}
+
+// ===== INFRA =====
+async function openInfra(){
+  document.getElementById('infra-modal').classList.add('open');
+  const body=document.getElementById('infra-body');body.innerHTML='<div style="color:#aaa">Загрузка...</div>';
+  try{
+    const r=await fetch(`${P}/infra`);const d=await r.json();
+    let h='<div>';
+    h+=`<div class="tree-srv"><div class="tree-hd"><div class="tdot tdg"></div>EU · 147.45.75.59</div>`;
+    h+=`<div class="tree-br"><div class="tdot tdg"></div><span>Proxy :3010</span><span class="tmeta tmg">active</span></div>`;
+    h+=`<div class="tree-br"><div class="tdot tdg"></div><span>Реестр Supabase</span><span class="tmeta tmg">gromovenko schema</span></div>`;
+    h+=`<div class="tree-br"><div class="tdot tdg"></div><span>Dashboard nginx :80</span><span class="tmeta tmg">active</span></div>`;
+    h+=`<div class="tree-br"><div class="tdot tdg"></div><span>Туннель Xray :443</span><span class="tmeta tmg">VLESS+WS+TLS</span></div></div>`;
+    h+=`<div class="tree-srv"><div class="tree-hd"><div class="tdot tdg"></div>RU · 80.249.150.234</div>`;
+    for(const[name,db]of Object.entries(d.dbs||{})){
+      const port=name==='life'?':15433':name==='letov'?':15434':'';
+      h+=`<div class="tree-br"><div class="tdot ${db.ok?'tdg':'tdr'}"></div><span>DB ${name}${port}</span><span class="tmeta ${db.ok?'tmg':''}">socat</span></div>`;
+      if(db.ok&&db.tables){h+='<table class="db-tbl"><tr><th>Таблица</th><th>Записей</th><th>Размер</th></tr>';for(const[t,i]of Object.entries(db.tables))h+=`<tr><td>${t}</td><td>${i.count}</td><td>${i.size}</td></tr>`;h+='</table>';}
+    }
+    h+='</div>';
+    h+=`<div class="tree-srv"><div class="tree-hd">📦 Репозитории</div>`;
+    for(const p of (d.projects||[])){
+      h+=`<div class="tree-br"><div class="tdot" style="background:${p.color}"></div><span>${p.name}</span><span class="tmeta">${p.domain} → ${p.prod_server.toUpperCase()}</span></div>`;
+      for(const repo of [p.frontend_repo,p.data_repo].filter(Boolean)){
+        const info=d.repos?.[repo];
+        h+=`<div class="tree-br" style="margin-left:12px"><div class="tdot ${info?.ok?'tdg':'tdr'}"></div><span>${repo}</span><span class="tmeta">${info?.ok?info.branch:'не склонирован'}</span></div>`;
+      }
+    }
+    h+='</div></div>';
+    body.innerHTML=h;
+  }catch(e){body.innerHTML='<div style="color:#E24B4A">Ошибка: '+e.message+'</div>';}
+}
+function closeInfra(){document.getElementById('infra-modal').classList.remove('open');}
+function cp(t){navigator.clipboard.writeText(t).then(()=>alert('Скопировано')).catch(()=>prompt('Скопируй:',t));}
+
+init();
+</script>
+</body>
+</html>
