@@ -34,7 +34,7 @@ function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 120000) {
     const tmpFile = `/tmp/claude_prompt_${Date.now()}.txt`;
     fs.writeFileSync(tmpFile, prompt, 'utf8');
     exec(
-      `cd "${cwd}" && claude --output-format text < "${tmpFile}" 2>&1`,
+      `cd "${cwd}" && claude --print --output-format text --permission-mode acceptEdits < "${tmpFile}" 2>&1`,
       { timeout, maxBuffer: 1024 * 1024 * 10, cwd },
       (err, stdout) => {
         try { fs.unlinkSync(tmpFile); } catch(e) {}
