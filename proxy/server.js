@@ -1,6 +1,6 @@
 const express = require('express');
 const { Pool } = require('pg');
-const { execSync } = require('child_process');
+const { execSync, exec } = require('child_process');
 const multer = require('multer');
 const fs = require('fs');
 
@@ -30,17 +30,19 @@ const projectPools = {
 
 // ============ HELPERS ============
 function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 120000) {
-  const tmpFile = `/tmp/claude_prompt_${Date.now()}.txt`;
-  fs.writeFileSync(tmpFile, prompt, 'utf8');
-  try {
-    const result = execSync(
+  return new Promise((resolve, reject) => {
+    const tmpFile = `/tmp/claude_prompt_${Date.now()}.txt`;
+    fs.writeFileSync(tmpFile, prompt, 'utf8');
+    exec(
       `cd "${cwd}" && claude -p --output-format text < "${tmpFile}" 2>&1`,
-      { timeout, maxBuffer: 1024 * 1024 * 10, cwd }
-    ).toString().trim();
-    return result.replace(/```json|```/g, '').trim();
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch(e) {}
-  }
+      { timeout, maxBuffer: 1024 * 1024 * 10, cwd },
+      (err, stdout) => {
+        try { fs.unlinkSync(tmpFile); } catch(e) {}
+        if (err) return reject(err);
+        resolve(stdout.trim().replace(/```json|```/g, '').trim());
+      }
+    );
+  });
 }
 
 async function getProject(name) {
@@ -128,7 +130,7 @@ app.post('/claude', async (req, res) => {
     // Add thinking hint for high effort
     if (effort === 'high') prompt = 'Think carefully and deeply before answering.\n\n' + prompt;
     if (effort === 'medium') prompt = 'Think step by step.\n\n' + prompt;
-    const result = claudeRun(prompt);
+    const result = await claudeRun(prompt);
     res.json({ content: [{ type: 'text', text: result }] });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -148,7 +150,7 @@ app.post('/execute', async (req, res) => {
     } catch(e) {}
 
     const prompt = `Задача: ${task}${approach ? '\nПодход: ' + approach : ''}${ctx}`;
-    const result = claudeRun(prompt, cwd);
+    const result = await claudeRun(prompt, cwd);
 
     // Сохраняем диалог разработки
     try {
