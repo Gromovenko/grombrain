@@ -31,7 +31,7 @@ const projectPools = {
 // ============ HELPERS ============
 function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 120000) {
   const escaped = prompt.replace(/'/g, "'\\''");
-  const result = execSync(`cd ${cwd} && claude -p '${escaped}' --output-format text 2>/dev/null`, { timeout, maxBuffer: 1024*1024*10, cwd }).toString().trim();
+  const result = execSync(`cd ${cwd} && claude -p '${escaped}' --output-format text --dangerously-skip-permissions 2>&1`, { timeout, maxBuffer: 1024*1024*10, cwd }).toString().trim();
   return result.replace(/```json|```/g, '').trim();
 }
 
@@ -111,12 +111,15 @@ app.get('/dialogs/:project', async (req, res) => {
 // ============ CLAUDE (analyze, with dev context) ============
 app.post('/claude', async (req, res) => {
   try {
-    const { system, message, messages } = req.body;
+    const { system, message, messages, effort } = req.body;
     let prompt = system ? 'SYSTEM:\n' + system + '\n\n' : '';
     if (messages && messages.length) {
       prompt += messages.map(m => (m.role === 'user' ? 'USER: ' : 'ASSISTANT: ') + m.content).join('\n') + '\n';
     }
     prompt += 'USER: ' + message;
+    // Add thinking hint for high effort
+    if (effort === 'high') prompt = 'Think carefully and deeply before answering.\n\n' + prompt;
+    if (effort === 'medium') prompt = 'Think step by step.\n\n' + prompt;
     const result = claudeRun(prompt);
     res.json({ content: [{ type: 'text', text: result }] });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -185,6 +188,7 @@ app.post('/deploy', async (req, res) => {
       [project, 'deploy', 'Деплой фронта', target, 'deployed']
     );
 
+    updateClaudeMd();
     res.json({ ok: true, result: log.join('\n') });
   } catch(e) { res.status(500).json({ error: e.message, stderr: e.stderr?.toString()?.substring(0,500) }); }
 });
@@ -260,11 +264,22 @@ app.post('/upload/:project', upload.array('files', 50), async (req, res) => {
 
 // ============ PROJECT SETTINGS ============
 app.patch('/projects/:name', async (req, res) => {
-  const { description, system_prompt, ds_prompt, cfg_dskey, cfg_dbpass, cfg_jwt, cfg_notes } = req.body;
+  const allowed = ['description', 'system_prompt', 'ds_prompt', 'cfg_dskey', 'cfg_dbpass', 'cfg_jwt', 'cfg_notes'];
+  const fields = [], values = [];
+  for (const key of allowed) {
+    if (key in req.body) {
+      const v = req.body[key];
+      fields.push(key);
+      values.push((v === 'None' || v === undefined) ? null : v);
+    }
+  }
+  if (!fields.length) return res.json({ ok: true });
+  const setClause = fields.map((k, i) => `${k}=$${i + 1}`).join(', ');
+  values.push(req.params.name);
   try {
     await registry.query(
-      'UPDATE gromovenko.projects SET description=$1, system_prompt=$2, ds_prompt=$3, cfg_dskey=$4, cfg_dbpass=$5, cfg_jwt=$6, cfg_notes=$7 WHERE name=$8',
-      [description, system_prompt, ds_prompt, cfg_dskey, cfg_dbpass, cfg_jwt, cfg_notes, req.params.name]
+      `UPDATE gromovenko.projects SET ${setClause} WHERE name=$${values.length}`,
+      values
     );
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -358,10 +373,10 @@ app.post('/wg-add', async (req, res) => {
 app.get('/wg-peers', async (req, res) => {
   const { execSync } = require('child_process');
   try {
-    const out = execSync('ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "cat /etc/wireguard/wg1.conf"', {timeout:10000}).toString();
+    const out = execSync('ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@80.249.150.234 "cat /etc/wireguard/wg1.conf"', {timeout:8000}).toString();
     const peers = [];
     const blocks = out.split('[Peer]').filter(b=>b.trim());
-    const ipNames = {'10.20.0.2':'grom','10.20.0.3':'vika','10.20.0.4':'sasha','10.20.0.5':'mama','10.20.0.6':'eva'};
+    const ipNames = {'10.20.0.2':'grom','10.20.0.3':'vika','10.20.0.4':'sasha','10.20.0.5':'mama','10.20.0.6':'eva','10.20.0.7':'aksay','10.20.0.8':'mac_vika'};
     for(const block of blocks){
       const pubkey = (block.match(/PublicKey = (.+)/) || [])[1] || '';
       const ip = (block.match(/AllowedIPs = (.+?)\//) || [])[1] || '';
@@ -384,3 +399,8 @@ app.delete('/wg-peers/:pubkey', async (req, res) => {
 });
 
 app.listen(3010, () => console.log('Gromovenko Proxy v2 :3010'));
+
+// Auto-update CLAUDE.md after any deploy
+function updateClaudeMd() {
+  try { require('child_process').execSync('bash /root/gromovenko/update_claude_md.sh', {timeout:30000}); } catch(e) {}
+}
