@@ -34,11 +34,11 @@ function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 120000) {
     const tmpFile = `/tmp/claude_prompt_${Date.now()}.txt`;
     fs.writeFileSync(tmpFile, prompt, 'utf8');
     exec(
-      `cd "${cwd}" && claude --print --output-format text --permission-mode acceptEdits < "${tmpFile}" 2>&1`,
-      { timeout, maxBuffer: 1024 * 1024 * 10, cwd },
+      `claude --print --output-format text --permission-mode acceptEdits < "${tmpFile}" 2>&1`,
+      { timeout, maxBuffer: 1024 * 1024 * 10, cwd, env: { ...process.env, HOME: '/root' } },
       (err, stdout) => {
         try { fs.unlinkSync(tmpFile); } catch(e) {}
-        if (err) return reject(err);
+        if (err) return reject(new Error(`${err.message}\n---\n${stdout?.slice(0, 500)}`));
         resolve(stdout.trim().replace(/```json|```/g, '').trim());
       }
     );
