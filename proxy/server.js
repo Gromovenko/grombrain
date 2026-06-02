@@ -158,7 +158,11 @@ app.post('/execute', async (req, res) => {
         [project, 'user', task, 'assistant', result.substring(0, 5000)]);
     } catch(e) {}
 
-    res.json({ ok: true, result });
+    // Git-изменения для журнала
+    let changes = '';
+    try { changes = execSync(`git -C "${cwd}" log --oneline -3 2>/dev/null`).toString().trim(); } catch(e) {}
+
+    res.json({ ok: true, result, changes });
   } catch(e) { res.status(500).json({ error: e.message, stderr: e.stderr?.toString() }); }
 });
 
