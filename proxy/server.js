@@ -30,9 +30,17 @@ const projectPools = {
 
 // ============ HELPERS ============
 function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 120000) {
-  const escaped = prompt.replace(/'/g, "'\\''");
-  const result = execSync(`cd ${cwd} && claude -p '${escaped}' --output-format text --dangerously-skip-permissions 2>&1`, { timeout, maxBuffer: 1024*1024*10, cwd }).toString().trim();
-  return result.replace(/```json|```/g, '').trim();
+  const tmpFile = `/tmp/claude_prompt_${Date.now()}.txt`;
+  fs.writeFileSync(tmpFile, prompt, 'utf8');
+  try {
+    const result = execSync(
+      `cd "${cwd}" && claude -p --output-format text < "${tmpFile}" 2>&1`,
+      { timeout, maxBuffer: 1024 * 1024 * 10, cwd }
+    ).toString().trim();
+    return result.replace(/```json|```/g, '').trim();
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch(e) {}
+  }
 }
 
 async function getProject(name) {
