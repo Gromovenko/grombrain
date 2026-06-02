@@ -34,7 +34,7 @@ function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 120000) {
     const tmpFile = `/tmp/claude_prompt_${Date.now()}.txt`;
     fs.writeFileSync(tmpFile, prompt, 'utf8');
     exec(
-      `cd "${cwd}" && claude -p --output-format text < "${tmpFile}" 2>&1`,
+      `cd "${cwd}" && claude --output-format text < "${tmpFile}" 2>&1`,
       { timeout, maxBuffer: 1024 * 1024 * 10, cwd },
       (err, stdout) => {
         try { fs.unlinkSync(tmpFile); } catch(e) {}
@@ -174,8 +174,16 @@ app.post('/deploy', async (req, res) => {
     const target = p.prod_server;
 
     log.push(`→ git pull ${p.frontend_repo}...`);
+    let prevHash = '';
+    try { prevHash = execSync(`git -C ${repoPath} rev-parse HEAD 2>/dev/null`).toString().trim(); } catch(e) {}
     execSync(`git -C ${repoPath} pull`, { timeout: 30000 });
-    log.push('✓ pulled');
+    let changelog = '';
+    try {
+      changelog = prevHash
+        ? execSync(`git -C ${repoPath} log --oneline ${prevHash}..HEAD 2>/dev/null`).toString().trim()
+        : execSync(`git -C ${repoPath} log --oneline -5 2>/dev/null`).toString().trim();
+    } catch(e) {}
+    log.push('✓ pulled' + (changelog ? `\nИзменения:\n${changelog}` : ' (нет новых коммитов)'));
 
     log.push('→ npm install + build...');
     execSync(`cd ${repoPath} && npm install --production=false && npm run build`, { timeout: 180000 });
@@ -193,13 +201,14 @@ app.post('/deploy', async (req, res) => {
       log.push(`✓ deployed to EU :${p.port}`);
     }
 
+    const journalTask = changelog || 'нет новых коммитов';
     await registry.query(
       'INSERT INTO gromovenko.deployments (project, version, task, target_server, status) VALUES ($1,$2,$3,$4,$5)',
-      [project, 'deploy', 'Деплой фронта', target, 'deployed']
+      [project, 'deploy', journalTask, target, 'deployed']
     );
 
     updateClaudeMd();
-    res.json({ ok: true, result: log.join('\n') });
+    res.json({ ok: true, result: log.join('\n'), changelog });
   } catch(e) { res.status(500).json({ error: e.message, stderr: e.stderr?.toString()?.substring(0,500) }); }
 });
 
@@ -349,7 +358,9 @@ app.post('/test-run', async (req, res) => {
   try {
     execSync(`cd ${p.frontend_path} && pm2 stop test-${project} 2>/dev/null || true`);
     execSync(`cd ${p.frontend_path} && pm2 start npm --name test-${project} -- start -- -p ${testPort}`, { timeout: 30000 });
-    res.json({ ok: true, result: `✓ Тест запущен на EU :${testPort}\nURL: http://147.45.75.59:${testPort}` });
+    let commit = '';
+    try { commit = execSync(`git -C ${p.frontend_path} log --oneline -3 2>/dev/null`).toString().trim(); } catch(e) {}
+    res.json({ ok: true, result: `✓ Тест запущен на EU :${testPort}\nURL: http://147.45.75.59:${testPort}`, commit });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
