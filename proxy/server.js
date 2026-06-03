@@ -29,19 +29,32 @@ const projectPools = {
 };
 
 // ============ HELPERS ============
-function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 120000) {
+function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000) {
   return new Promise((resolve, reject) => {
-    const tmpFile = `/tmp/claude_prompt_${Date.now()}.txt`;
-    fs.writeFileSync(tmpFile, prompt, 'utf8');
-    exec(
-      `claude --print --output-format text --permission-mode acceptEdits < "${tmpFile}" 2>&1`,
-      { timeout, maxBuffer: 1024 * 1024 * 10, cwd, env: { ...process.env, HOME: '/root' } },
-      (err, stdout) => {
-        try { fs.unlinkSync(tmpFile); } catch(e) {}
-        if (err) return reject(new Error(`${err.message}\n---\n${stdout?.slice(0, 500)}`));
-        resolve(stdout.trim().replace(/```json|```/g, '').trim());
-      }
+    const { spawn } = require('child_process');
+    const child = spawn(
+      'claude',
+      ['--print', '--output-format', 'text', '--permission-mode', 'acceptEdits'],
+      { cwd, env: { ...process.env, HOME: '/root' }, stdio: ['pipe', 'pipe', 'pipe'] }
     );
+    child.stdin.write(prompt, 'utf8');
+    child.stdin.end();
+
+    let stdout = '', stderr = '';
+    child.stdout.on('data', d => stdout += d);
+    child.stderr.on('data', d => stderr += d);
+
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      reject(new Error(`Claude timeout after ${timeout}ms. Output so far: ${stdout.substring(0, 300)}`));
+    }, timeout);
+
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      if (signal === 'SIGTERM') return; // handled by timer
+      if (code !== 0) return reject(new Error(`Claude exit ${code}: ${stderr.slice(0,300)}\n${stdout.slice(0,300)}`));
+      resolve(stdout.trim().replace(/```json|```/g, '').trim());
+    });
   });
 }
 
