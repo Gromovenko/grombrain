@@ -200,6 +200,8 @@ app.post('/deploy', async (req, res) => {
         ? execSync(`git -C ${repoPath} log --oneline ${prevHash}..HEAD 2>/dev/null`).toString().trim()
         : execSync(`git -C ${repoPath} log --oneline -5 2>/dev/null`).toString().trim();
     } catch(e) {}
+    let currentHash = '';
+    try { currentHash = execSync(`git -C ${repoPath} rev-parse --short HEAD 2>/dev/null`).toString().trim(); } catch(e) {}
     log.push('✓ pulled' + (changelog ? `\nИзменения:\n${changelog}` : ' (нет новых коммитов)'));
 
     log.push('→ npm install + build...');
@@ -225,7 +227,7 @@ app.post('/deploy', async (req, res) => {
     );
 
     updateClaudeMd();
-    res.json({ ok: true, result: log.join('\n'), changelog });
+    res.json({ ok: true, result: log.join('\n'), changelog, currentHash });
   } catch(e) { res.status(500).json({ error: e.message, stderr: e.stderr?.toString()?.substring(0,500) }); }
 });
 
