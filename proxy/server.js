@@ -34,7 +34,7 @@ function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000) {
     const { spawn } = require('child_process');
     const child = spawn(
       'claude',
-      ['--print', '--output-format', 'text', '--permission-mode', 'acceptEdits'],
+      ['--print', '--output-format', 'text', '--permission-mode', 'acceptEdits', '--model', 'claude-sonnet-4-6'],
       { cwd, env: { ...process.env, HOME: '/root' }, stdio: ['pipe', 'pipe', 'pipe'] }
     );
     child.stdin.write(prompt, 'utf8');
