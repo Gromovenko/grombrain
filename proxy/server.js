@@ -58,6 +58,28 @@ function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000) {
   });
 }
 
+// ============ ASYNC JOB QUEUE ============
+const jobs = {};
+let jobSeq = 0;
+function newJob() {
+  const id = `j${Date.now()}_${++jobSeq}`;
+  jobs[id] = { status: 'pending', created: Date.now() };
+  return id;
+}
+// clean up jobs older than 2h
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  for (const id of Object.keys(jobs)) {
+    if (jobs[id].created < cutoff) delete jobs[id];
+  }
+}, 10 * 60 * 1000);
+
+app.get('/jobs/:id', (req, res) => {
+  const job = jobs[req.params.id];
+  if (!job) return res.status(404).json({ error: 'not found' });
+  res.json(job);
+});
+
 async function getProject(name) {
   const r = await registry.query('SELECT * FROM gromovenko.projects WHERE name=$1', [name]);
   return r.rows[0];
@@ -148,6 +170,24 @@ app.post('/claude', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/claude/async', (req, res) => {
+  const { system, message, messages, effort } = req.body;
+  let prompt = system ? 'SYSTEM:\n' + system + '\n\n' : '';
+  if (messages && messages.length) {
+    prompt += messages.map(m => (m.role === 'user' ? 'USER: ' : 'ASSISTANT: ') + m.content).join('\n') + '\n';
+  }
+  prompt += 'USER: ' + message;
+  if (effort === 'high') prompt = 'Think carefully and deeply before answering.\n\n' + prompt;
+  if (effort === 'medium') prompt = 'Think step by step.\n\n' + prompt;
+
+  const id = newJob();
+  res.json({ jobId: id });
+
+  claudeRun(prompt)
+    .then(result => { jobs[id] = { status: 'done', text: result, created: jobs[id].created }; })
+    .catch(e => { jobs[id] = { status: 'error', error: e.message, created: jobs[id].created }; });
+});
+
 // ============ EXECUTE (single, fixed - no duplicate) ============
 app.post('/execute', async (req, res) => {
   try {
@@ -177,6 +217,38 @@ app.post('/execute', async (req, res) => {
 
     res.json({ ok: true, result, changes });
   } catch(e) { res.status(500).json({ error: e.message, stderr: e.stderr?.toString() }); }
+});
+
+app.post('/execute/async', async (req, res) => {
+  const { project, task, approach } = req.body;
+  const id = newJob();
+  res.json({ jobId: id });
+
+  try {
+    const p = await getProject(project);
+    const cwd = p?.frontend_path || '/root/gromovenko';
+
+    let ctx = '';
+    try {
+      const k = await registry.query('SELECT title, content FROM gromovenko.dev_knowledge WHERE project=$1 ORDER BY created_at DESC LIMIT 5', [project]);
+      if (k.rows.length) ctx = '\n\nКонтекст разработки:\n' + k.rows.map(r => `- ${r.title}: ${r.content}`).join('\n');
+    } catch(e) {}
+
+    const prompt = `Задача: ${task}${approach ? '\nПодход: ' + approach : ''}${ctx}`;
+    const result = await claudeRun(prompt, cwd);
+
+    try {
+      await registry.query('INSERT INTO gromovenko.dev_dialogs (project, role, content) VALUES ($1,$2,$3),($1,$4,$5)',
+        [project, 'user', task, 'assistant', result.substring(0, 5000)]);
+    } catch(e) {}
+
+    let changes = '';
+    try { changes = execSync(`git -C "${cwd}" log --oneline -3 2>/dev/null`).toString().trim(); } catch(e) {}
+
+    jobs[id] = { status: 'done', result, changes, created: jobs[id].created };
+  } catch(e) {
+    jobs[id] = { status: 'error', error: e.message, created: jobs[id].created };
+  }
 });
 
 // ============ DEPLOY (dev -> prod, server-aware) ============
