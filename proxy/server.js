@@ -402,6 +402,35 @@ const DEEPSEEK_KEYS = {
   letov: 'sk-1dd76518cdf044c0b3465993c39205ae'
 };
 
+// ============ PROMPT READ/WRITE ============
+app.get('/prompt/:project', async (req, res) => {
+  const pool = projectPools[req.params.project];
+  if (!pool) return res.json({ content: null });
+  try {
+    const r = await pool.query(
+      "SELECT content FROM system_prompts WHERE id='deepseek_user_chat' LIMIT 1"
+    );
+    const content = r.rows[0]?.content ?? null;
+    res.json({ content: content?.startsWith('-- initial') ? null : content });
+  } catch { res.json({ content: null }); }
+});
+
+app.patch('/prompt/:project', async (req, res) => {
+  const pool = projectPools[req.params.project];
+  if (!pool) return res.status(404).json({ error: 'unknown project' });
+  const { content } = req.body;
+  if (typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+  try {
+    await pool.query(
+      `INSERT INTO system_prompts (id, content, updated_at, updated_by)
+       VALUES ('deepseek_user_chat', $1, now(), 'gromdash')
+       ON CONFLICT (id) DO UPDATE SET content=$1, updated_at=now(), updated_by='gromdash'`,
+      [content]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/deepseek/:project', async (req, res) => {
   const { system, message } = req.body;
   const project = req.params.project;
