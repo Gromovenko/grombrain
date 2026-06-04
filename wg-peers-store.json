@@ -1,0 +1,27 @@
+{
+  "grom": {
+    "ip": "10.20.0.2",
+    "privkey": "GDV1kv1n8M4OjyHm1eueef3wsWZk6iWqIGhxBulBinE=",
+    "pubkey": "N2TRPGK6pn1hCSRMXyqpowljwBEK+go4tD+1v71gi0U="
+  },
+  "vika": {
+    "ip": "10.20.0.3",
+    "privkey": "qGrT5NrsbkvKipvMh6R2utp0sHo6sYBQtXp/poxW5lA=",
+    "pubkey": "8eHZ6r15WbtufTfUB5ySDIC0YPkZRRycU/qgBH25LkQ="
+  },
+  "sasha": {
+    "ip": "10.20.0.4",
+    "privkey": "+NB56jp0038zCjnNNLvfREoS8MQCL6mH4yKYiWjHYEs=",
+    "pubkey": "8kTeP209amyK34+rE+VPpS4uYYQCqakmfeqjNktRwCQ="
+  },
+  "mama": {
+    "ip": "10.20.0.5",
+    "privkey": "KIZ94AIFdKbQm6c7uheR3nRsTZMhF87Gg8EjUIOKxWk=",
+    "pubkey": "p0lzcTIFBTolgVq+xMCcxcD5y7P9T+PLHakmiNS3MRw="
+  },
+  "eva": {
+    "ip": "10.20.0.6",
+    "privkey": "4Ae5wMMlADLN0ChAG2H/5O+MDQb8GD//klzZ3nssbF0=",
+    "pubkey": "Oru6FIpoQph5/ruLeiJkP/yv7zddbjIpHRU2fY2ilic="
+  }
+}

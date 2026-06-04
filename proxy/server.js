@@ -499,13 +499,32 @@ app.post('/wg-add', async (req, res) => {
   const { name, ip } = req.body;
   if (!name || !ip) return res.status(400).json({ error: 'name and ip required' });
   const { execSync } = require('child_process');
+  const fs = require('fs');
   try {
-    const script = `set -e; PRIVKEY=$(wg genkey); PUBKEY=$(echo $PRIVKEY | wg pubkey); printf '[Peer]\\n# ${name}\\nPublicKey = '$PUBKEY'\\nAllowedIPs = ${ip}/32\\n\\n' >> /etc/wireguard/wg1.conf; wg set wg1 peer $PUBKEY allowed-ips ${ip}/32; echo PRIVKEY=$PRIVKEY; echo PUBKEY=$PUBKEY`;
-    const out = execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 '${script}'`, {timeout:15000}).toString();
-    const privKey = (out.match(/PRIVKEY=(.+)/) || [])[1] || '';
+    const script = [
+      'set -e',
+      'PRIVKEY=$(wg genkey)',
+      'PUBKEY=$(echo $PRIVKEY | wg pubkey)',
+      `printf '[Peer]\\n# ${name}\\nPublicKey = %s\\nAllowedIPs = ${ip}/32\\n\\n' "$PUBKEY" >> /etc/wireguard/wg1.conf`,
+      `wg set wg1 peer "$PUBKEY" allowed-ips ${ip}/32`,
+      'echo "PRIVKEY=$PRIVKEY"',
+      'echo "PUBKEY=$PUBKEY"'
+    ].join('\n');
+    const out = execSync('ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 bash', {
+      input: script, timeout: 15000
+    }).toString();
+    const privKey = (out.match(/PRIVKEY=(.+)/) || [])[1]?.trim() || '';
+    const pubKey  = (out.match(/PUBKEY=(.+)/)  || [])[1]?.trim() || '';
+    if (!privKey) throw new Error('keygen failed: ' + out);
+    // сохраняем приватный ключ
+    const storePath = '/root/gromovenko/wg-peers-store.json';
+    let store = {};
+    try { store = JSON.parse(fs.readFileSync(storePath, 'utf8')); } catch(e) {}
+    store[name] = { ip, privkey: privKey, pubkey: pubKey };
+    fs.writeFileSync(storePath, JSON.stringify(store, null, 2));
     const serverPub = 'avYjwYOlcdj5YR7W7bO5rbpB5BIlRnwwm0L3Mfcfrgs=';
-    const config = `[Interface]\nPrivateKey = ${privKey}\nAddress = ${ip}/24\nDNS = 8.8.8.8\n\n[Peer]\nPublicKey = ${serverPub}\nEndpoint = 80.249.150.234:51821\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25`;
-    res.json({ ok: true, config });
+    const config = `[Interface]\nPrivateKey = ${privKey}\nAddress = ${ip}/32\nDNS = 8.8.8.8, 8.8.4.4\n\n[Peer]\nPublicKey = ${serverPub}\nEndpoint = 80.249.150.234:51821\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25`;
+    res.json({ ok: true, config, pubkey: pubKey });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -513,8 +532,11 @@ app.post('/wg-add', async (req, res) => {
 // ============ WIREGUARD PEERS ============
 app.get('/wg-peers', async (req, res) => {
   const { execSync } = require('child_process');
+  const fs = require('fs');
   try {
     const out = execSync('ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@80.249.150.234 "cat /etc/wireguard/wg1.conf"', {timeout:8000}).toString();
+    let store = {};
+    try { store = JSON.parse(fs.readFileSync('/root/gromovenko/wg-peers-store.json', 'utf8')); } catch(e) {}
     const peers = [];
     const blocks = out.split('[Peer]').filter(b=>b.trim());
     const ipNames = {'10.20.0.2':'grom','10.20.0.3':'vika','10.20.0.4':'sasha','10.20.0.5':'mama','10.20.0.6':'eva','10.20.0.7':'aksay','10.20.0.8':'mac_vika'};
@@ -524,7 +546,8 @@ app.get('/wg-peers', async (req, res) => {
       if(!pubkey || !ip) continue;
       const nameMatch = block.match(/# (.+)/);
       const name = nameMatch ? nameMatch[1].trim() : (ipNames[ip.trim()] || 'unknown');
-      peers.push({name, pubkey: pubkey.trim(), ip: ip.trim()});
+      const privkey = store[name]?.privkey || '';
+      peers.push({name, pubkey: pubkey.trim(), ip: ip.trim(), privkey});
     }
     res.json(peers);
   } catch(e) { res.status(500).json({ error: e.message }); }
