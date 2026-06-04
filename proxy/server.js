@@ -539,6 +539,80 @@ app.delete('/wg-peers/:pubkey', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/claude-usage', (req, res) => {
+  const fs = require('fs');
+  const { execSync } = require('child_process');
+  try {
+    const windowMs = 5 * 60 * 60 * 1000;
+    const now = Date.now();
+    const cutoff = now - windowMs;
+    let files = [];
+    try {
+      files = execSync('find /root/.claude/projects -name "*.jsonl" -mmin -300 2>/dev/null', {timeout:5000})
+        .toString().trim().split('\n').filter(Boolean);
+    } catch(e){}
+
+    let windowStart = null;
+    let totalIn=0, totalOut=0, totalCacheRead=0, totalCacheCreate=0, msgCount=0;
+    let aiTitle=null, lastPrompt=null, recentMtime=0;
+
+    for (const file of files) {
+      try {
+        const stat = fs.statSync(file);
+        const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+        for (const line of lines) {
+          try {
+            const d = JSON.parse(line);
+            const ts = new Date(d.timestamp).getTime();
+            if (!ts || ts < cutoff) continue;
+            if (windowStart === null || ts < windowStart) windowStart = ts;
+            const msg = d.message;
+            if (msg && typeof msg === 'object' && msg.usage) {
+              const u = msg.usage;
+              totalIn += u.input_tokens || 0;
+              totalOut += u.output_tokens || 0;
+              totalCacheRead += u.cache_read_input_tokens || 0;
+              totalCacheCreate += u.cache_creation_input_tokens || 0;
+              msgCount++;
+            }
+          } catch(e){}
+        }
+        if (stat.mtimeMs > recentMtime) {
+          recentMtime = stat.mtimeMs;
+          for (let i = lines.length - 1; i >= 0 && (!aiTitle || !lastPrompt); i--) {
+            try {
+              const d = JSON.parse(lines[i]);
+              if (!aiTitle && d.type === 'ai-title') aiTitle = d.aiTitle;
+              if (!lastPrompt && d.type === 'last-prompt') lastPrompt = d.lastPrompt;
+            } catch(e){}
+          }
+        }
+      } catch(e){}
+    }
+
+    let sessions = [];
+    try {
+      const sdir = '/root/.claude/sessions/';
+      for (const sf of fs.readdirSync(sdir)) {
+        try { sessions.push(JSON.parse(fs.readFileSync(sdir + sf, 'utf8'))); } catch(e){}
+      }
+    } catch(e){}
+
+    const nextReset = windowStart ? windowStart + windowMs : null;
+    const costUsd = totalIn*3/1e6 + totalOut*15/1e6 + totalCacheRead*0.30/1e6 + totalCacheCreate*3.75/1e6;
+    res.json({
+      window_start: windowStart,
+      next_reset: nextReset,
+      tokens: {in:totalIn, out:totalOut, cache_read:totalCacheRead, cache_create:totalCacheCreate},
+      cost_usd: parseFloat(costUsd.toFixed(2)),
+      msg_count: msgCount,
+      sessions,
+      ai_title: aiTitle,
+      last_prompt: lastPrompt
+    });
+  } catch(e) { res.status(500).json({error: e.message}); }
+});
+
 app.listen(3010, () => console.log('Gromovenko Proxy v2 :3010'));
 
 // Auto-update CLAUDE.md after any deploy
