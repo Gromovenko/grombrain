@@ -23,5 +23,25 @@
     "ip": "10.20.0.6",
     "privkey": "4Ae5wMMlADLN0ChAG2H/5O+MDQb8GD//klzZ3nssbF0=",
     "pubkey": "Oru6FIpoQph5/ruLeiJkP/yv7zddbjIpHRU2fY2ilic="
+  },
+  "mobi_vika": {
+    "ip": "10.20.0.10",
+    "privkey": "kCgtYvBherwbB2KaWCos5c+TeGeld9sY+Er/smhpuXU=",
+    "pubkey": "ts/E2vK5BcimnZmebJ5scxDKZYEYcfCUMWtJDDTDxmE="
+  },
+  "mobi_kir": {
+    "ip": "10.20.0.11",
+    "privkey": "KHIwIamLaFSVkVNdqy7brwoLxvohXndLh9B5IFkKbFY=",
+    "pubkey": "/xorSyCecSTXiRBxY2XU0jRGrB/AW3PXUgwugtgKAyg="
+  },
+  "pc_kir": {
+    "ip": "10.20.0.12",
+    "privkey": "aBiIXlR4zSV40YsWtuQ/w7VQPyFgDzF0lr30s0UOx0k=",
+    "pubkey": "SqmtQCPzy8X1si74mtXv0EaSB2asjcNqsEJag3Vc0lI="
+  },
+  "mobi_ula": {
+    "ip": "10.20.0.13",
+    "privkey": "kJjvIijGGi1VXyJwGf+oAEAheO5G7PFdLVmEImH3pWg=",
+    "pubkey": "+vceW/y6sDa/eYG5Lhvvv3GR8oAl41rdPD2oW9DDTEo="
   }
 }
