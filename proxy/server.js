@@ -387,7 +387,7 @@ app.get('/infra', async (req, res) => {
 app.get('/upload/:project', async (req, res) => {
   try {
     const p = await getProject(req.params.project);
-    const cwd = p?.frontend_path;
+    const cwd = p?.upload_path || p?.frontend_path;
     if (!cwd || !fs.existsSync(cwd)) return res.json({ files: [] });
     const SKIP = new Set(['node_modules', '.next', '.git', 'dist', '.cache', 'out', '.turbo']);
     const items = fs.readdirSync(cwd)
@@ -407,7 +407,9 @@ app.get('/upload/:project', async (req, res) => {
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     const p = await getProject(req.params.project);
-    cb(null, p?.frontend_path || '/tmp');
+    const dir = p?.upload_path || p?.frontend_path || '/tmp';
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
   },
   filename: (req, file, cb) => cb(null, file.originalname)
 });
@@ -415,6 +417,7 @@ const upload = multer({ storage });
 app.post('/upload/:project', upload.array('files', 50), async (req, res) => {
   try {
     const p = await getProject(req.params.project);
+    const uploadDir = p?.upload_path || p?.frontend_path;
     const files = req.files.map(f => f.originalname);
     execSync(`cd ${p.frontend_path} && git add . && git commit -m "upload: ${files.join(', ')}" 2>/dev/null || true`);
     res.json({ ok: true, files });
