@@ -592,17 +592,20 @@ app.get('/claude-usage', (req, res) => {
     let windowStart = null;
     let totalIn=0, totalOut=0, totalCacheRead=0, totalCacheCreate=0, msgCount=0;
     let weekOut=0;
-    let aiTitle=null, lastPrompt=null, recentMtime=0;
+    // Track by latest ENTRY timestamp, not file mtime (mtime updated by ANY write, can be stale task)
+    let aiTitle=null, lastPrompt=null;
+    let latestEntryTs=0, latestFileLines=null;
 
     for (const file of weekFiles) {
       try {
-        const stat = fs.statSync(file);
         const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+        let fileMaxTs = 0;
         for (const line of lines) {
           try {
             const d = JSON.parse(line);
             const ts = new Date(d.timestamp).getTime();
             if (!ts || ts < weekCutoff) continue;
+            if (ts > fileMaxTs) fileMaxTs = ts;
             const msg = d.message;
             if (msg && typeof msg === 'object' && msg.usage) {
               const u = msg.usage;
@@ -618,17 +621,22 @@ app.get('/claude-usage', (req, res) => {
             }
           } catch(e){}
         }
-        if (stat.mtimeMs > recentMtime) {
-          recentMtime = stat.mtimeMs;
-          for (let i = lines.length - 1; i >= 0 && (!aiTitle || !lastPrompt); i--) {
-            try {
-              const d = JSON.parse(lines[i]);
-              if (!aiTitle  && d.type === 'ai-title')    aiTitle    = d.aiTitle;
-              if (!lastPrompt && d.type === 'last-prompt') lastPrompt = d.lastPrompt;
-            } catch(e){}
-          }
+        if (fileMaxTs > latestEntryTs) {
+          latestEntryTs = fileMaxTs;
+          latestFileLines = lines;
         }
       } catch(e){}
+    }
+
+    // Extract title/prompt from the file with the most recent activity
+    if (latestFileLines) {
+      for (let i = latestFileLines.length - 1; i >= 0 && (!aiTitle || !lastPrompt); i--) {
+        try {
+          const d = JSON.parse(latestFileLines[i]);
+          if (!aiTitle    && d.type === 'ai-title')    aiTitle    = d.aiTitle;
+          if (!lastPrompt && d.type === 'last-prompt') lastPrompt = d.lastPrompt;
+        } catch(e){}
+      }
     }
 
     let sessions = [];
