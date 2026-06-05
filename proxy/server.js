@@ -19,7 +19,7 @@ app.use((req, res, next) => {
 // Реестр-дирижабль — локальный Supabase на EU
 const registry = new Pool({
   host: 'supabase-db-eu', port: 5432, database: 'postgres', user: 'postgres',
-  password: process.env.REGISTRY_PG_PASS || 'postgres',
+  password: process.env.REGISTRY_PG_PASS || '8b8bf97ab5cbf0e76ab77506ac9525c6',
   options: '-c search_path=gromovenko'
 });
 
