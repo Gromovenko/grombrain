@@ -220,7 +220,7 @@ app.post('/execute', async (req, res) => {
     } catch(e) {}
 
     const prompt = `Задача: ${task}${approach ? '\nПодход: ' + approach : ''}${ctx}`;
-    const result = await claudeRun(prompt, cwd, 600000);
+    const result = await claudeRun(prompt, cwd, 1500000, 200);
 
     // Сохраняем диалог разработки
     try {
@@ -252,7 +252,7 @@ app.post('/execute/async', async (req, res) => {
     } catch(e) {}
 
     const prompt = `Задача: ${task}${approach ? '\nПодход: ' + approach : ''}${ctx}`;
-    const result = await claudeRun(prompt, cwd, 600000, null, part => { jobs[id].partial = part.slice(-6000); });
+    const result = await claudeRun(prompt, cwd, 1500000, 200, part => { jobs[id].partial = part.slice(-6000); });
 
     try {
       await registry.query('INSERT INTO gromovenko.dev_dialogs (project, role, content) VALUES ($1,$2,$3),($1,$4,$5)',
