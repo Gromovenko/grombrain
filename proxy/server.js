@@ -294,14 +294,21 @@ app.post('/deploy', async (req, res) => {
     log.push('✓ pulled' + (changelog ? `\nИзменения:\n${changelog}` : ' (нет новых коммитов)'));
 
     log.push('→ npm install + build...');
-    execSync(`cd ${repoPath} && npm install --production=false && npm run build`, { timeout: 180000 });
+    const buildCmd = p.build_cmd ? `cd ${repoPath} && ${p.build_cmd}` : `cd ${repoPath} && npm install --production=false && npm run build`;
+    execSync(buildCmd, { timeout: 180000 });
     log.push('✓ built');
 
     if (target === 'ru') {
       log.push('→ rsync to RU server...');
-      execSync(`rsync -az --delete ${repoPath}/ -e "ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no" root@80.249.150.234:/opt/${project}/app/ --exclude=node_modules --exclude=.git`, { timeout: 120000 });
-    execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "cd /opt/${project}/app && npm install --omit=dev 2>/dev/null"`, { timeout: 60000 });
-      execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "cd /opt/${project}/app && pm2 restart ${project} || pm2 start npm --name ${project} -- start -- -p ${p.port}"`, { timeout: 60000 });
+      // prod_path overrides default /opt/{project}/app — e.g. "letov-app" → /opt/letov-app
+      const ruBase = p.prod_path ? `/opt/${p.prod_path}` : `/opt/${project}/app`;
+      execSync(`rsync -az --delete ${repoPath}/ -e "ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no" root@80.249.150.234:${ruBase}/ --exclude=node_modules --exclude=.git`, { timeout: 120000 });
+      // Extract cd subdir if build_cmd starts with "cd X &&", install deps only (build already done)
+      const cdMatch = p.build_cmd && p.build_cmd.match(/^(cd\s+\S+)\s*&&/);
+      const ruDir = cdMatch ? `${ruBase}/${cdMatch[1].replace('cd ','').trim()}` : ruBase;
+      const installCmd = `cd ${ruDir} && npm install --omit=dev 2>/dev/null`;
+      execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "${installCmd}"`, { timeout: 120000 });
+      execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "cd ${ruDir} && pm2 restart ${project} 2>/dev/null || pm2 start npm --name ${project} -- start -- -p ${p.port}"`, { timeout: 60000 });
       log.push(`✓ deployed to RU :${p.port}`);
     } else {
       log.push('→ deploy on EU (local)...');
