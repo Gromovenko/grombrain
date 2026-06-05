@@ -182,7 +182,7 @@ app.post('/claude', async (req, res) => {
     // Add thinking hint for high effort
     if (effort === 'high') prompt = 'Think carefully and deeply before answering.\n\n' + prompt;
     if (effort === 'medium') prompt = 'Think step by step.\n\n' + prompt;
-    const result = await claudeRun(prompt, '/root/gromovenko', 180000, 5);
+    const result = await claudeRun(prompt, '/root/gromovenko', 1500000, 5);
     res.json({ content: [{ type: 'text', text: result }] });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -200,7 +200,7 @@ app.post('/claude/async', (req, res) => {
   const id = newJob();
   res.json({ jobId: id });
 
-  claudeRun(prompt, '/root/gromovenko', 180000, 30, p => { jobs[id].partial = p.slice(-6000); })
+  claudeRun(prompt, '/root/gromovenko', 1500000, 30, p => { jobs[id].partial = p.slice(-6000); })
     .then(result => { jobs[id] = { status: 'done', text: result, created: jobs[id].created }; })
     .catch(e => { jobs[id] = { status: 'error', error: e.message, created: jobs[id].created }; });
 });
@@ -309,11 +309,24 @@ app.post('/deploy', async (req, res) => {
       log.push(`✓ deployed to EU :${p.port}`);
     }
 
-    const journalTask = changelog || 'нет новых коммитов';
-    await registry.query(
-      'INSERT INTO gromovenko.deployments (project, version, task, target_server, status) VALUES ($1,$2,$3,$4,$5)',
-      [project, 'deploy', journalTask, target, 'deployed']
-    );
+    // Write journal entries per commit (client won't write its own)
+    const lines = (changelog || '').split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length) {
+      for (const line of lines) {
+        const m = line.match(/^([a-f0-9]{7,})\s+(.+)/);
+        const ver = m?.[1] ?? currentHash;
+        const task = m?.[2] ?? line;
+        await registry.query(
+          'INSERT INTO gromovenko.deployments (project, version, task, approach, target_server) VALUES ($1,$2,$3,$4,$5)',
+          [project, ver, task, '[prod-deploy]', target]
+        );
+      }
+    } else {
+      await registry.query(
+        'INSERT INTO gromovenko.deployments (project, version, task, approach, target_server) VALUES ($1,$2,$3,$4,$5)',
+        [project, currentHash || 'deploy', 'нет новых коммитов', '[prod-deploy]', target]
+      );
+    }
 
     updateClaudeMd();
     res.json({ ok: true, result: log.join('\n'), changelog, currentHash });
@@ -371,6 +384,26 @@ app.get('/infra', async (req, res) => {
 });
 
 // ============ UPLOAD ============
+app.get('/upload/:project', async (req, res) => {
+  try {
+    const p = await getProject(req.params.project);
+    const cwd = p?.frontend_path;
+    if (!cwd || !fs.existsSync(cwd)) return res.json({ files: [] });
+    const SKIP = new Set(['node_modules', '.next', '.git', 'dist', '.cache', 'out', '.turbo']);
+    const items = fs.readdirSync(cwd)
+      .filter(f => !SKIP.has(f))
+      .map(f => {
+        try {
+          const stat = fs.statSync(`${cwd}/${f}`);
+          return { name: f, isDir: stat.isDirectory(), size: stat.isFile() ? stat.size : null };
+        } catch { return null; }
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1);
+    res.json({ files: items });
+  } catch(e) { res.json({ files: [], error: e.message }); }
+});
+
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     const p = await getProject(req.params.project);
@@ -573,9 +606,9 @@ app.delete('/wg-peers/:pubkey', async (req, res) => {
 });
 
 app.get('/claude-usage', (req, res) => {
-  // Plan limits (Claude Code Max, Sonnet 4.6 output tokens) — empirically verified
-  const WIN_LIMIT  =   540_000;  // 5h window
-  const WEEK_LIMIT = 4_800_000;  // 7d window
+  // Plan limits — Claude Max $100/mo, Sonnet 4.6 output tokens (≈5x $20 plan)
+  const WIN_LIMIT  = 2_000_000;  // 5h window
+  const WEEK_LIMIT = 9_000_000;  // 7d window
   try {
     const windowMs = 5 * 60 * 60 * 1000;
     const now = Date.now();
