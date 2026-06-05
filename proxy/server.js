@@ -200,7 +200,7 @@ app.post('/claude/async', (req, res) => {
   const id = newJob();
   res.json({ jobId: id });
 
-  claudeRun(prompt, '/root/gromovenko', 180000, 5, p => { jobs[id].partial = p.slice(-6000); })
+  claudeRun(prompt, '/root/gromovenko', 180000, 30, p => { jobs[id].partial = p.slice(-6000); })
     .then(result => { jobs[id] = { status: 'done', text: result, created: jobs[id].created }; })
     .catch(e => { jobs[id] = { status: 'error', error: e.message, created: jobs[id].created }; });
 });
