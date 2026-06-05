@@ -30,7 +30,7 @@ const projectPools = {
 };
 
 // ============ HELPERS ============
-function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000, maxTurns = null) {
+function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000, maxTurns = null, onProgress = null) {
   return new Promise((resolve, reject) => {
     const args = [
       '--print', '--output-format', 'text',
@@ -49,7 +49,7 @@ function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000, maxTurns 
     child.stdin.end();
 
     let stdout = '', stderr = '', settled = false;
-    child.stdout.on('data', d => stdout += d);
+    child.stdout.on('data', d => { stdout += d; if (onProgress) onProgress(stdout); });
     child.stderr.on('data', d => stderr += d);
 
     function settle(fn) { if (!settled) { settled = true; fn(); } }
@@ -200,7 +200,7 @@ app.post('/claude/async', (req, res) => {
   const id = newJob();
   res.json({ jobId: id });
 
-  claudeRun(prompt, '/root/gromovenko', 180000, 5)
+  claudeRun(prompt, '/root/gromovenko', 180000, 5, p => { jobs[id].partial = p.slice(-6000); })
     .then(result => { jobs[id] = { status: 'done', text: result, created: jobs[id].created }; })
     .catch(e => { jobs[id] = { status: 'error', error: e.message, created: jobs[id].created }; });
 });
@@ -252,7 +252,7 @@ app.post('/execute/async', async (req, res) => {
     } catch(e) {}
 
     const prompt = `Задача: ${task}${approach ? '\nПодход: ' + approach : ''}${ctx}`;
-    const result = await claudeRun(prompt, cwd, 600000);
+    const result = await claudeRun(prompt, cwd, 600000, null, part => { jobs[id].partial = part.slice(-6000); });
 
     try {
       await registry.query('INSERT INTO gromovenko.dev_dialogs (project, role, content) VALUES ($1,$2,$3),($1,$4,$5)',
