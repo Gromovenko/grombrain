@@ -30,30 +30,47 @@ const projectPools = {
 };
 
 // ============ HELPERS ============
-function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000) {
+function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000, maxTurns = null) {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      'claude',
-      ['--print', '--output-format', 'text', '--permission-mode', 'acceptEdits', '--model', 'claude-sonnet-4-6'],
-      { cwd, env: { ...process.env, HOME: '/root' }, stdio: ['pipe', 'pipe', 'pipe'] }
-    );
+    const args = [
+      '--print', '--output-format', 'text',
+      '--permission-mode', 'bypassPermissions',
+      '--model', 'claude-sonnet-4-6',
+    ];
+    if (maxTurns) args.push('--max-turns', String(maxTurns));
+
+    const child = spawn('claude', args, {
+      cwd,
+      env: { ...process.env, HOME: '/root' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
+    });
     child.stdin.write(prompt, 'utf8');
     child.stdin.end();
 
-    let stdout = '', stderr = '';
+    let stdout = '', stderr = '', settled = false;
     child.stdout.on('data', d => stdout += d);
     child.stderr.on('data', d => stderr += d);
 
+    function settle(fn) { if (!settled) { settled = true; fn(); } }
+
+    const killTree = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch(e) {} };
+
     const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      reject(new Error(`Claude timeout after ${timeout}ms. Output so far: ${stdout.substring(0, 300)}`));
+      killTree();
+      settle(() => {
+        const partial = stdout.trim().replace(/```json|```/g, '').trim();
+        if (partial.length > 100) resolve(partial + '\n\n⚠ прерван по таймауту');
+        else reject(new Error(`Claude timeout ${Math.round(timeout/1000)}s. stderr: ${stderr.slice(0,200)}`));
+      });
     }, timeout);
 
-    child.on('close', (code, signal) => {
+    child.on('close', code => {
       clearTimeout(timer);
-      if (signal === 'SIGTERM') return; // handled by timer
-      if (code !== 0) return reject(new Error(`Claude exit ${code}: ${stderr.slice(0,300)}\n${stdout.slice(0,300)}`));
-      resolve(stdout.trim().replace(/```json|```/g, '').trim());
+      settle(() => {
+        if (code !== 0) return reject(new Error(`Claude exit ${code}: ${stderr.slice(0,300)}\n${stdout.slice(0,300)}`));
+        resolve(stdout.trim().replace(/```json|```/g, '').trim());
+      });
     });
   });
 }
@@ -165,7 +182,7 @@ app.post('/claude', async (req, res) => {
     // Add thinking hint for high effort
     if (effort === 'high') prompt = 'Think carefully and deeply before answering.\n\n' + prompt;
     if (effort === 'medium') prompt = 'Think step by step.\n\n' + prompt;
-    const result = await claudeRun(prompt);
+    const result = await claudeRun(prompt, '/root/gromovenko', 180000, 5);
     res.json({ content: [{ type: 'text', text: result }] });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -183,7 +200,7 @@ app.post('/claude/async', (req, res) => {
   const id = newJob();
   res.json({ jobId: id });
 
-  claudeRun(prompt)
+  claudeRun(prompt, '/root/gromovenko', 180000, 5)
     .then(result => { jobs[id] = { status: 'done', text: result, created: jobs[id].created }; })
     .catch(e => { jobs[id] = { status: 'error', error: e.message, created: jobs[id].created }; });
 });
@@ -203,7 +220,7 @@ app.post('/execute', async (req, res) => {
     } catch(e) {}
 
     const prompt = `Задача: ${task}${approach ? '\nПодход: ' + approach : ''}${ctx}`;
-    const result = await claudeRun(prompt, cwd);
+    const result = await claudeRun(prompt, cwd, 600000);
 
     // Сохраняем диалог разработки
     try {
@@ -235,7 +252,7 @@ app.post('/execute/async', async (req, res) => {
     } catch(e) {}
 
     const prompt = `Задача: ${task}${approach ? '\nПодход: ' + approach : ''}${ctx}`;
-    const result = await claudeRun(prompt, cwd);
+    const result = await claudeRun(prompt, cwd, 600000);
 
     try {
       await registry.query('INSERT INTO gromovenko.dev_dialogs (project, role, content) VALUES ($1,$2,$3),($1,$4,$5)',
