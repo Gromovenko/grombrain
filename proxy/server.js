@@ -573,9 +573,9 @@ app.delete('/wg-peers/:pubkey', async (req, res) => {
 });
 
 app.get('/claude-usage', (req, res) => {
-  // Plan limits (Claude Code Max, Sonnet 4.6 output tokens)
-  const WIN_LIMIT  = 1_000_000;
-  const WEEK_LIMIT = 5_000_000;
+  // Plan limits (Claude Code Max, Sonnet 4.6 output tokens) — empirically verified
+  const WIN_LIMIT  =   540_000;  // 5h window
+  const WEEK_LIMIT = 4_800_000;  // 7d window
   try {
     const windowMs = 5 * 60 * 60 * 1000;
     const now = Date.now();
