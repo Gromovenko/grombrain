@@ -1,8 +1,9 @@
 const express = require('express');
 const { Pool } = require('pg');
-const { execSync, exec } = require('child_process');
+const { execSync, exec, spawn } = require('child_process');
 const multer = require('multer');
 const fs = require('fs');
+const https = require('https');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -31,7 +32,6 @@ const projectPools = {
 // ============ HELPERS ============
 function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000) {
   return new Promise((resolve, reject) => {
-    const { spawn } = require('child_process');
     const child = spawn(
       'claude',
       ['--print', '--output-format', 'text', '--permission-mode', 'acceptEdits', '--model', 'claude-sonnet-4-6'],
@@ -436,7 +436,6 @@ app.post('/deepseek/:project', async (req, res) => {
   const project = req.params.project;
   const apiKey = DEEPSEEK_KEYS[project] || DEEPSEEK_KEYS.life;
   try {
-    const https = require('https');
     const body = JSON.stringify({
       model: 'deepseek-chat',
       messages: [
@@ -446,7 +445,7 @@ app.post('/deepseek/:project', async (req, res) => {
       max_tokens: 2000
     });
     const result = await new Promise((resolve, reject) => {
-      const req = https.request({
+      const dreq = https.request({
         hostname: 'api.deepseek.com',
         path: '/v1/chat/completions',
         method: 'POST',
@@ -456,9 +455,9 @@ app.post('/deepseek/:project', async (req, res) => {
         r.on('data', c => data += c);
         r.on('end', () => resolve(JSON.parse(data)));
       });
-      req.on('error', reject);
-      req.write(body);
-      req.end();
+      dreq.on('error', reject);
+      dreq.write(body);
+      dreq.end();
     });
     const text = result.choices?.[0]?.message?.content || 'нет ответа';
     res.json({ content: [{ type: 'text', text }] });
@@ -471,7 +470,6 @@ const TEST_PORTS = { life: 3091, letov: 3092, soundrussian: 3093 };
 
 app.post('/test-run', async (req, res) => {
   const { project } = req.body;
-  const { execSync } = require('child_process');
   const p = await getProject(project);
   if (!p) return res.status(404).json({ error: 'unknown project' });
   const testPort = TEST_PORTS[project] || 3090;
@@ -486,7 +484,6 @@ app.post('/test-run', async (req, res) => {
 
 app.post('/test-stop', async (req, res) => {
   const { project } = req.body;
-  const { execSync } = require('child_process');
   try {
     execSync(`pm2 stop test-${project} && pm2 delete test-${project} 2>/dev/null || true`);
     res.json({ ok: true });
@@ -498,8 +495,6 @@ app.post('/test-stop', async (req, res) => {
 app.post('/wg-add', async (req, res) => {
   const { name, ip } = req.body;
   if (!name || !ip) return res.status(400).json({ error: 'name and ip required' });
-  const { execSync } = require('child_process');
-  const fs = require('fs');
   try {
     const script = [
       'set -e',
@@ -531,8 +526,6 @@ app.post('/wg-add', async (req, res) => {
 
 // ============ WIREGUARD PEERS ============
 app.get('/wg-peers', async (req, res) => {
-  const { execSync } = require('child_process');
-  const fs = require('fs');
   try {
     const out = execSync('ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@80.249.150.234 "cat /etc/wireguard/wg1.conf"', {timeout:8000}).toString();
     let store = {};
@@ -563,23 +556,28 @@ app.delete('/wg-peers/:pubkey', async (req, res) => {
 });
 
 app.get('/claude-usage', (req, res) => {
-  const fs = require('fs');
-  const { execSync } = require('child_process');
+  // Plan limits (Claude Code Max, Sonnet 4.6 output tokens)
+  const WIN_LIMIT  = 1_000_000;
+  const WEEK_LIMIT = 5_000_000;
   try {
     const windowMs = 5 * 60 * 60 * 1000;
     const now = Date.now();
-    const cutoff = now - windowMs;
-    let files = [];
+    const winCutoff  = now - windowMs;
+    const weekCutoff = now - 7 * 24 * 60 * 60 * 1000;
+
+    // files touched in last 7 days (superset of last 5h)
+    let weekFiles = [];
     try {
-      files = execSync('find /root/.claude/projects -name "*.jsonl" -mmin -300 2>/dev/null', {timeout:5000})
+      weekFiles = execSync('find /root/.claude/projects -name "*.jsonl" -mtime -7 2>/dev/null', {timeout:5000})
         .toString().trim().split('\n').filter(Boolean);
     } catch(e){}
 
     let windowStart = null;
     let totalIn=0, totalOut=0, totalCacheRead=0, totalCacheCreate=0, msgCount=0;
+    let weekOut=0;
     let aiTitle=null, lastPrompt=null, recentMtime=0;
 
-    for (const file of files) {
+    for (const file of weekFiles) {
       try {
         const stat = fs.statSync(file);
         const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
@@ -587,16 +585,19 @@ app.get('/claude-usage', (req, res) => {
           try {
             const d = JSON.parse(line);
             const ts = new Date(d.timestamp).getTime();
-            if (!ts || ts < cutoff) continue;
-            if (windowStart === null || ts < windowStart) windowStart = ts;
+            if (!ts || ts < weekCutoff) continue;
             const msg = d.message;
             if (msg && typeof msg === 'object' && msg.usage) {
               const u = msg.usage;
-              totalIn += u.input_tokens || 0;
-              totalOut += u.output_tokens || 0;
-              totalCacheRead += u.cache_read_input_tokens || 0;
-              totalCacheCreate += u.cache_creation_input_tokens || 0;
-              msgCount++;
+              weekOut += u.output_tokens || 0;
+              if (ts >= winCutoff) {
+                if (windowStart === null || ts < windowStart) windowStart = ts;
+                totalIn  += u.input_tokens || 0;
+                totalOut += u.output_tokens || 0;
+                totalCacheRead   += u.cache_read_input_tokens || 0;
+                totalCacheCreate += u.cache_creation_input_tokens || 0;
+                msgCount++;
+              }
             }
           } catch(e){}
         }
@@ -605,7 +606,7 @@ app.get('/claude-usage', (req, res) => {
           for (let i = lines.length - 1; i >= 0 && (!aiTitle || !lastPrompt); i--) {
             try {
               const d = JSON.parse(lines[i]);
-              if (!aiTitle && d.type === 'ai-title') aiTitle = d.aiTitle;
+              if (!aiTitle  && d.type === 'ai-title')    aiTitle    = d.aiTitle;
               if (!lastPrompt && d.type === 'last-prompt') lastPrompt = d.lastPrompt;
             } catch(e){}
           }
@@ -621,14 +622,19 @@ app.get('/claude-usage', (req, res) => {
       }
     } catch(e){}
 
-    const nextReset = windowStart ? windowStart + windowMs : null;
-    const costUsd = totalIn*3/1e6 + totalOut*15/1e6 + totalCacheRead*0.30/1e6 + totalCacheCreate*3.75/1e6;
+    const nextReset  = windowStart ? windowStart + windowMs : null;
+    const costUsd    = totalIn*3/1e6 + totalOut*15/1e6 + totalCacheRead*0.30/1e6 + totalCacheCreate*3.75/1e6;
+    const windowPct  = Math.min(Math.round(totalOut / WIN_LIMIT  * 100), 999);
+    const weekPct    = Math.min(Math.round(weekOut  / WEEK_LIMIT * 100), 999);
+
     res.json({
       window_start: windowStart,
       next_reset: nextReset,
       tokens: {in:totalIn, out:totalOut, cache_read:totalCacheRead, cache_create:totalCacheCreate},
       cost_usd: parseFloat(costUsd.toFixed(2)),
       msg_count: msgCount,
+      window_pct: windowPct,
+      week_pct: weekPct,
       sessions,
       ai_title: aiTitle,
       last_prompt: lastPrompt
