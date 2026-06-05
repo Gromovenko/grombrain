@@ -24,6 +24,11 @@
     "privkey": "4Ae5wMMlADLN0ChAG2H/5O+MDQb8GD//klzZ3nssbF0=",
     "pubkey": "Oru6FIpoQph5/ruLeiJkP/yv7zddbjIpHRU2fY2ilic="
   },
+  "aksay": {
+    "ip": "10.20.0.7",
+    "privkey": "AI5ryoCjyDp4lztOzQf+n2IDqrTSORmvRPUJgwblmXE=",
+    "pubkey": "3+ywNRefTFhcb4op1iUr2ThejG1TEdbb8t2ad9KdLkE="
+  },
   "mobi_vika": {
     "ip": "10.20.0.10",
     "privkey": "kCgtYvBherwbB2KaWCos5c+TeGeld9sY+Er/smhpuXU=",
