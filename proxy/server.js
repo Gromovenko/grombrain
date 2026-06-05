@@ -34,7 +34,7 @@ function claudeRun(prompt, cwd = '/root/gromovenko', timeout = 300000, maxTurns 
   return new Promise((resolve, reject) => {
     const args = [
       '--print', '--output-format', 'text',
-      '--permission-mode', 'bypassPermissions',
+      '--permission-mode', 'acceptEdits',
       '--model', 'claude-sonnet-4-6',
     ];
     if (maxTurns) args.push('--max-turns', String(maxTurns));
