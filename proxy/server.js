@@ -533,7 +533,7 @@ app.post('/deepseek/:project', async (req, res) => {
   const apiKey = DEEPSEEK_KEYS[project] || DEEPSEEK_KEYS.life;
   try {
     const body = JSON.stringify({
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       messages: [
         { role: 'system', content: system || 'Ты технический ассистент.' },
         { role: 'user', content: message }
