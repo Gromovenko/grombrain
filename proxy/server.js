@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
 const { execSync, exec, spawn } = require('child_process');
@@ -10,8 +11,18 @@ app.use(express.json({ limit: '10mb' }));
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Dash-Token');
   if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+  next();
+});
+
+// ── Optional token auth (set DASH_TOKEN in .env to enable) ──
+const DASH_TOKEN = process.env.DASH_TOKEN;
+app.use((req, res, next) => {
+  if (!DASH_TOKEN) return next(); // auth disabled
+  if (req.method === 'GET' && req.path === '/health') return next(); // health check always open
+  const tok = req.headers['x-dash-token'] || req.query.token;
+  if (tok !== DASH_TOKEN) return res.status(401).json({ error: 'unauthorized' });
   next();
 });
 
@@ -19,14 +30,14 @@ app.use((req, res, next) => {
 // Реестр-дирижабль — локальный Supabase на EU
 const registry = new Pool({
   host: 'supabase-db-eu', port: 5432, database: 'postgres', user: 'postgres',
-  password: process.env.REGISTRY_PG_PASS || '8b8bf97ab5cbf0e76ab77506ac9525c6',
+  password: process.env.REGISTRY_PG_PASS,
   options: '-c search_path=gromovenko'
 });
 
 // Project DBs (клиентские данные) — через socat к RU
 const projectPools = {
-  life: new Pool({ host: '80.249.150.234', port: 15433, database: 'postgres', user: 'postgres', password: '87e4ac14f47230d6ea1c325c2312b831', connectionTimeoutMillis: 4000 }),
-  letov: new Pool({ host: '80.249.150.234', port: 15434, database: 'postgres', user: 'postgres', password: 'e6e66d2323f8c303c1e5473db77852e1', connectionTimeoutMillis: 4000 })
+  life:  new Pool({ host: '80.249.150.234', port: 15433, database: 'postgres', user: 'postgres', password: process.env.LIFE_PG_PASS,  connectionTimeoutMillis: 4000 }),
+  letov: new Pool({ host: '80.249.150.234', port: 15434, database: 'postgres', user: 'postgres', password: process.env.LETOV_PG_PASS, connectionTimeoutMillis: 4000 })
 };
 
 // ============ HELPERS ============
