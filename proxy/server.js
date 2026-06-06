@@ -301,7 +301,7 @@ app.post('/execute/async', async (req, res) => {
   }
 });
 
-// ============ DEPLOY (dev -> prod, server-aware) ============
+// ============ DEPLOY (git-based: push EU → git pull on target server) ============
 app.post('/deploy', async (req, res) => {
   try {
     const { project } = req.body;
@@ -311,19 +311,21 @@ app.post('/deploy', async (req, res) => {
     const log = [];
     const repoPath = p.frontend_path;
     const target = p.prod_server;
+    const pm2Name = project.replace(/\.[a-z]{2,}$/, '');
+    const RU_SSH = 'ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234';
 
-    // commit + push any local uncommitted changes before pulling
+    // 1. Commit + push any local uncommitted changes to GitHub
     log.push(...autoGitCommitPush(repoPath, 'prod-deploy'));
 
-    log.push(`→ git pull ${p.frontend_repo}...`);
+    // 2. Pull latest from GitHub on EU side (changelog tracking)
     let prevHash = '';
     try { prevHash = execSync(`git -C ${repoPath} rev-parse HEAD 2>/dev/null`).toString().trim(); } catch(e) {}
-    const hasRemote = (() => { try { execSync(`git -C ${repoPath} remote 2>/dev/null`, {stdio:'pipe'}); return execSync(`git -C ${repoPath} remote 2>/dev/null`).toString().trim().length > 0; } catch(e) { return false; } })();
+    const hasRemote = execSync(`git -C ${repoPath} remote 2>/dev/null`).toString().trim().length > 0;
     if (hasRemote) {
       execSync(`git -C ${repoPath} pull`, { timeout: 30000 });
-    } else {
-      log.push('(no remote — skipping pull, local repo)');
+      log.push('✓ git pull (EU)');
     }
+
     let changelog = '';
     try {
       changelog = prevHash
@@ -334,40 +336,59 @@ app.post('/deploy', async (req, res) => {
     try { currentHash = execSync(`git -C ${repoPath} rev-parse --short HEAD 2>/dev/null`).toString().trim(); } catch(e) {}
     if (hasRemote) log.push('✓ pulled' + (changelog ? `\nИзменения:\n${changelog}` : ' (нет новых коммитов)'));
 
-    log.push('→ npm install + build...');
-    const buildCmd = p.build_cmd ? `cd ${repoPath} && ${p.build_cmd}` : `cd ${repoPath} && npm install --production=false && npm run build`;
-    execSync(buildCmd, { timeout: 180000 });
-    log.push('✓ built');
-
-    // pm2 name may differ from project name (e.g. soundrussian.uz → soundrussian)
-    const pm2Name = project.replace(/\.[a-z]{2,}$/, '');
-
     if (target === 'ru') {
-      log.push('→ rsync to RU server...');
-      // prod_path overrides default /opt/{project}/app — e.g. "letov-app" → /opt/letov-app
-      const ruBase = p.prod_path ? `/opt/${p.prod_path}` : `/opt/${project}/app`;
-      execSync(`rsync -az --delete ${repoPath}/ -e "ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no" root@80.249.150.234:${ruBase}/ --exclude=node_modules --exclude=.git`, { timeout: 120000 });
-      // Extract cd subdir if build_cmd starts with "cd X &&", install deps only (build already done)
-      const cdMatch = p.build_cmd && p.build_cmd.match(/^(cd\s+\S+)\s*&&/);
-      const ruDir = cdMatch ? `${ruBase}/${cdMatch[1].replace('cd ','').trim()}` : ruBase;
-      const installCmd = `cd ${ruDir} && npm install --omit=dev 2>/dev/null`;
-      execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "${installCmd}"`, { timeout: 120000 });
-      execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "cd ${ruDir} && pm2 restart ${pm2Name} 2>/dev/null || pm2 start npm --name ${pm2Name} -- start -- -p ${p.port}"`, { timeout: 60000 });
+      const ruDir = p.prod_path ? `/opt/${p.prod_path}` : `/opt/${project}/app`;
+      // pm2 name on RU matches prod_path (letov-app) or project (life)
+      const ruPm2Name = p.prod_path || pm2Name;
+
+      // Get SSH git URL from local remote (convert HTTPS → SSH automatically)
+      let gitUrl = '';
+      try {
+        const raw = execSync(`git -C ${repoPath} remote get-url origin 2>/dev/null`).toString().trim();
+        const m = raw.match(/[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?$/);
+        if (m) gitUrl = `git@github.com:${m[1]}.git`;
+      } catch(e) {}
+
+      // Clone on first deploy, pull on subsequent ones
+      const initScript = gitUrl
+        ? `if [ ! -d ${ruDir}/.git ]; then git clone ${gitUrl} ${ruDir}; else git -C ${ruDir} pull; fi`
+        : `git -C ${ruDir} pull`;
+      execSync(`${RU_SSH} bash`, { input: initScript, timeout: 60000 });
+      log.push(`✓ git pull на RU (${ruDir})`);
+
+      // Build on RU server
+      const buildScript = p.build_cmd
+        ? `set -e; cd ${ruDir} && ${p.build_cmd}`
+        : `set -e; cd ${ruDir} && npm install --production=false && npm run build`;
+      execSync(`${RU_SSH} bash`, { input: buildScript, timeout: 300000 });
+      log.push('✓ build на RU');
+
+      // PM2 restart
+      const pm2Script = `pm2 restart ${ruPm2Name} 2>/dev/null || pm2 start npm --name ${ruPm2Name} -- start -- -p ${p.port}`;
+      execSync(`${RU_SSH} bash`, { input: pm2Script, timeout: 30000 });
       log.push(`✓ deployed to RU :${p.port}`);
+
     } else {
-      log.push('→ deploy on EU (local)...');
-      // For EU projects with prod_path, rsync to /opt/prod_path then restart there
-      if (p.prod_path) {
-        const euProdDir = `/opt/${p.prod_path}`;
-        execSync(`rsync -az --delete ${repoPath}/ ${euProdDir}/ --exclude=node_modules --exclude=.git`, { timeout: 60000 });
-        execSync(`cd ${euProdDir} && npm install --omit=dev 2>/dev/null && pm2 restart ${pm2Name} 2>/dev/null || pm2 start ${euProdDir}/node_modules/.bin/next --cwd ${euProdDir} --name ${pm2Name} -- start -p ${p.port}`, { timeout: 60000 });
+      // EU target: build locally from repo dir
+      const buildCmd = p.build_cmd
+        ? `cd ${repoPath} && ${p.build_cmd}`
+        : `cd ${repoPath} && npm install --production=false && npm run build`;
+      execSync(buildCmd, { timeout: 180000 });
+      log.push('✓ build');
+
+      if (project === 'gromdash') {
+        // Static Vite site → copy dist to nginx
+        execSync(`cp -r ${repoPath}/dist/. /var/www/dashboard/`, { timeout: 15000 });
+        log.push('✓ обновлён /var/www/dashboard/');
+        execSync(`pm2 restart gromdash 2>/dev/null || true`, { timeout: 15000 });
       } else {
-        execSync(`cd ${repoPath} && pm2 restart ${pm2Name} || pm2 start npm --name ${pm2Name} -- start -- -p ${p.port}`, { timeout: 60000 });
+        // Next.js EU app runs from repo dir — just restart
+        execSync(`pm2 restart ${pm2Name} 2>/dev/null || pm2 start npm --name ${pm2Name} -- start -- -p ${p.port}`, { timeout: 30000 });
       }
       log.push(`✓ deployed to EU :${p.port}`);
     }
 
-    // Write journal entries per commit (client won't write its own)
+    // Write journal entries per commit
     const lines = (changelog || '').split('\n').map(l => l.trim()).filter(Boolean);
     if (lines.length) {
       for (const line of lines) {

@@ -17,3 +17,17 @@ logs/
 # Build output
 dist/
 build/
+
+# Separate project repos (managed independently via their own git remotes)
+letov-app/
+letov-data/
+lifeprotocol/
+lp-brain/
+agents/
+dashboard/
+mcp/
+nginx/
+orchestrator/
+
+# Backups
+*.bak
