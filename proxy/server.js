@@ -386,10 +386,9 @@ rm -f /tmp/${bundleName}`;
       log.push('✓ build');
 
       if (project === 'gromdash') {
-        // Static Vite site → copy dist to nginx
+        // Static Vite site → copy dist to nginx (no pm2 restart — gromdash IS the proxy)
         execSync(`cp -r ${repoPath}/dist/. /var/www/dashboard/`, { timeout: 15000 });
         log.push('✓ обновлён /var/www/dashboard/');
-        execSync(`pm2 restart gromdash 2>/dev/null || true`, { timeout: 15000 });
       } else {
         // Next.js EU app runs from repo dir — just restart
         execSync(`pm2 restart ${pm2Name} 2>/dev/null || pm2 start npm --name ${pm2Name} -- start -- -p ${p.port}`, { timeout: 30000 });
