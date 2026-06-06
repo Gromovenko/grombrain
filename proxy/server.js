@@ -282,7 +282,12 @@ app.post('/deploy', async (req, res) => {
     log.push(`→ git pull ${p.frontend_repo}...`);
     let prevHash = '';
     try { prevHash = execSync(`git -C ${repoPath} rev-parse HEAD 2>/dev/null`).toString().trim(); } catch(e) {}
-    execSync(`git -C ${repoPath} pull`, { timeout: 30000 });
+    const hasRemote = (() => { try { execSync(`git -C ${repoPath} remote 2>/dev/null`, {stdio:'pipe'}); return execSync(`git -C ${repoPath} remote 2>/dev/null`).toString().trim().length > 0; } catch(e) { return false; } })();
+    if (hasRemote) {
+      execSync(`git -C ${repoPath} pull`, { timeout: 30000 });
+    } else {
+      log.push('(no remote — skipping pull, local repo)');
+    }
     let changelog = '';
     try {
       changelog = prevHash
@@ -291,12 +296,15 @@ app.post('/deploy', async (req, res) => {
     } catch(e) {}
     let currentHash = '';
     try { currentHash = execSync(`git -C ${repoPath} rev-parse --short HEAD 2>/dev/null`).toString().trim(); } catch(e) {}
-    log.push('✓ pulled' + (changelog ? `\nИзменения:\n${changelog}` : ' (нет новых коммитов)'));
+    if (hasRemote) log.push('✓ pulled' + (changelog ? `\nИзменения:\n${changelog}` : ' (нет новых коммитов)'));
 
     log.push('→ npm install + build...');
     const buildCmd = p.build_cmd ? `cd ${repoPath} && ${p.build_cmd}` : `cd ${repoPath} && npm install --production=false && npm run build`;
     execSync(buildCmd, { timeout: 180000 });
     log.push('✓ built');
+
+    // pm2 name may differ from project name (e.g. soundrussian.uz → soundrussian)
+    const pm2Name = project.replace(/\.[a-z]{2,}$/, '');
 
     if (target === 'ru') {
       log.push('→ rsync to RU server...');
@@ -308,11 +316,18 @@ app.post('/deploy', async (req, res) => {
       const ruDir = cdMatch ? `${ruBase}/${cdMatch[1].replace('cd ','').trim()}` : ruBase;
       const installCmd = `cd ${ruDir} && npm install --omit=dev 2>/dev/null`;
       execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "${installCmd}"`, { timeout: 120000 });
-      execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "cd ${ruDir} && pm2 restart ${project} 2>/dev/null || pm2 start npm --name ${project} -- start -- -p ${p.port}"`, { timeout: 60000 });
+      execSync(`ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no root@80.249.150.234 "cd ${ruDir} && pm2 restart ${pm2Name} 2>/dev/null || pm2 start npm --name ${pm2Name} -- start -- -p ${p.port}"`, { timeout: 60000 });
       log.push(`✓ deployed to RU :${p.port}`);
     } else {
       log.push('→ deploy on EU (local)...');
-      execSync(`cd ${repoPath} && pm2 restart ${project} || pm2 start npm --name ${project} -- start -- -p ${p.port}`, { timeout: 60000 });
+      // For EU projects with prod_path, rsync to /opt/prod_path then restart there
+      if (p.prod_path) {
+        const euProdDir = `/opt/${p.prod_path}`;
+        execSync(`rsync -az --delete ${repoPath}/ ${euProdDir}/ --exclude=node_modules --exclude=.git`, { timeout: 60000 });
+        execSync(`cd ${euProdDir} && npm install --omit=dev 2>/dev/null && pm2 restart ${pm2Name} 2>/dev/null || pm2 start ${euProdDir}/node_modules/.bin/next --cwd ${euProdDir} --name ${pm2Name} -- start -p ${p.port}`, { timeout: 60000 });
+      } else {
+        execSync(`cd ${repoPath} && pm2 restart ${pm2Name} || pm2 start npm --name ${pm2Name} -- start -- -p ${p.port}`, { timeout: 60000 });
+      }
       log.push(`✓ deployed to EU :${p.port}`);
     }
 
@@ -491,6 +506,27 @@ app.patch('/prompt/:project', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/ds-balance', async (req, res) => {
+  const key = DEEPSEEK_KEYS.life;
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const dreq = https.request({
+        hostname: 'api.deepseek.com', path: '/user/balance', method: 'GET',
+        headers: { 'Authorization': `Bearer ${key}`, 'Accept': 'application/json' }
+      }, dres => {
+        let body = '';
+        dres.on('data', d => body += d);
+        dres.on('end', () => { try { resolve(JSON.parse(body)); } catch(e) { reject(e); } });
+      });
+      dreq.on('error', reject);
+      dreq.setTimeout(5000, () => { dreq.destroy(); reject(new Error('timeout')); });
+      dreq.end();
+    });
+    const info = data.balance_infos?.find(b => b.currency === 'USD') || data.balance_infos?.[0];
+    res.json({ balance: info?.total_balance ?? null, currency: info?.currency ?? 'USD' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/deepseek/:project', async (req, res) => {
   const { system, message } = req.body;
   const project = req.params.project;
@@ -526,16 +562,21 @@ app.post('/deepseek/:project', async (req, res) => {
 
 
 // ============ TEST RUN ============
-const TEST_PORTS = { life: 3091, letov: 3092, soundrussian: 3093 };
+const TEST_PORTS = { life: 3091, letov: 3092, 'soundrussian.uz': 3090 };
 
 app.post('/test-run', async (req, res) => {
   const { project } = req.body;
   const p = await getProject(project);
   if (!p) return res.status(404).json({ error: 'unknown project' });
   const testPort = TEST_PORTS[project] || 3090;
+  // For monorepo projects (letov), build_cmd starts with "cd subdir"
+  const subdir = p.build_cmd?.match(/^cd ([^\s&]+)/)?.[1];
+  const appDir = subdir ? `${p.frontend_path}/${subdir}` : p.frontend_path;
+  const nextBin = `${appDir}/node_modules/.bin/next`;
   try {
-    execSync(`cd ${p.frontend_path} && pm2 stop test-${project} 2>/dev/null || true`);
-    execSync(`cd ${p.frontend_path} && pm2 start npm --name test-${project} -- start -- -p ${testPort}`, { timeout: 30000 });
+    execSync(`pm2 stop test-${project} 2>/dev/null || true`);
+    execSync(`pm2 delete test-${project} 2>/dev/null || true`);
+    execSync(`pm2 start ${nextBin} --cwd ${appDir} --name test-${project} -- start -p ${testPort}`, { timeout: 30000 });
     let commit = '';
     try { commit = execSync(`git -C ${p.frontend_path} log --oneline -3 2>/dev/null`).toString().trim(); } catch(e) {}
     res.json({ ok: true, result: `✓ Тест запущен на EU :${testPort}\nURL: http://147.45.75.59:${testPort}`, commit });
@@ -587,7 +628,24 @@ app.post('/wg-add', async (req, res) => {
 // ============ WIREGUARD PEERS ============
 app.get('/wg-peers', async (req, res) => {
   try {
-    const out = execSync('ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@80.249.150.234 "cat /etc/wireguard/wg1.conf"', {timeout:8000}).toString();
+    const [confOut, showOut] = await Promise.allSettled([
+      Promise.resolve(execSync('ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@80.249.150.234 "cat /etc/wireguard/wg1.conf"', {timeout:8000}).toString()),
+      Promise.resolve(execSync('ssh -i /root/.ssh/ru_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@80.249.150.234 "wg show wg1 dump"', {timeout:8000}).toString()),
+    ]);
+    const out = confOut.status === 'fulfilled' ? confOut.value : '';
+    // Parse handshake timestamps from "wg show wg1 dump":
+    // columns: pubkey, preshared, endpoint, allowed_ips, latest_handshake, rx, tx, keepalive
+    const handshakes = {};
+    if (showOut.status === 'fulfilled') {
+      for (const line of showOut.value.split('\n').filter(Boolean)) {
+        const cols = line.split('\t');
+        if (cols.length < 5) continue;
+        const pubkey = cols[0].trim();
+        const ts = parseInt(cols[4], 10); // Unix timestamp, 0 if never
+        if (pubkey && pubkey !== '(none)') handshakes[pubkey] = ts;
+      }
+    }
+    const now = Math.floor(Date.now() / 1000);
     let store = {};
     try { store = JSON.parse(fs.readFileSync('/root/gromovenko/wg-peers-store.json', 'utf8')); } catch(e) {}
     const peers = [];
@@ -600,7 +658,9 @@ app.get('/wg-peers', async (req, res) => {
       const nameMatch = block.match(/# (.+)/);
       const name = nameMatch ? nameMatch[1].trim() : (ipNames[ip.trim()] || 'unknown');
       const privkey = store[name]?.privkey || '';
-      peers.push({name, pubkey: pubkey.trim(), ip: ip.trim(), privkey});
+      const lastHs = handshakes[pubkey.trim()] || 0;
+      const online = lastHs > 0 && (now - lastHs) < 180; // handshake within 3 min = active
+      peers.push({name, pubkey: pubkey.trim(), ip: ip.trim(), privkey, online, last_handshake: lastHs});
     }
     res.json(peers);
   } catch(e) { res.status(500).json({ error: e.message }); }
