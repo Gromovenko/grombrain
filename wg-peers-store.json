@@ -48,5 +48,15 @@
     "ip": "10.20.0.13",
     "privkey": "kJjvIijGGi1VXyJwGf+oAEAheO5G7PFdLVmEImH3pWg=",
     "pubkey": "+vceW/y6sDa/eYG5Lhvvv3GR8oAl41rdPD2oW9DDTEo="
+  },
+  "alexender": {
+    "ip": "10.20.0.14",
+    "privkey": "0MNmGoB5jyM2M43+oCPDc6JhZZs+coiqh0HJpj+MWFQ=",
+    "pubkey": "NslgpcSnAjfTx1jIM2Ttd4YDZdHaFIUbCNVNRxbWODo="
+  },
+  "tema": {
+    "ip": "10.20.0.15",
+    "privkey": "4B3/hOIxFmuOaKbqlYodNxHcoa03hUPsTVfGTWIL32Y=",
+    "pubkey": "9Fqb7T+QwpvUGOxEAVpmixabQRbxqw8EXFG23P4C13s="
   }
 }
