@@ -102,6 +102,28 @@ async function getProject(name) {
   return r.rows[0];
 }
 
+// ── auto-commit + push uncommitted changes before deploy ──
+function autoGitCommitPush(repoPath, label) {
+  const log = [];
+  try {
+    const status = execSync(`git -C ${repoPath} status --porcelain 2>/dev/null`).toString().trim();
+    if (status) {
+      execSync(`git -C ${repoPath} add -A`, { timeout: 10000 });
+      const ts = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      execSync(`git -C "${repoPath}" commit -m "auto: ${label} ${ts}"`, { timeout: 15000 });
+      log.push('✓ auto-committed local changes');
+    }
+    const hasRemote = execSync(`git -C ${repoPath} remote 2>/dev/null`).toString().trim();
+    if (hasRemote) {
+      execSync(`git -C ${repoPath} push 2>/dev/null`, { timeout: 30000 });
+      log.push('✓ pushed to origin');
+    }
+  } catch(e) {
+    log.push(`(auto-git: ${e.message.slice(0, 120)})`);
+  }
+  return log;
+}
+
 // ============ PROJECTS REGISTRY ============
 app.get('/projects', async (req, res) => {
   try {
@@ -278,6 +300,9 @@ app.post('/deploy', async (req, res) => {
     const log = [];
     const repoPath = p.frontend_path;
     const target = p.prod_server;
+
+    // commit + push any local uncommitted changes before pulling
+    log.push(...autoGitCommitPush(repoPath, 'prod-deploy'));
 
     log.push(`→ git pull ${p.frontend_repo}...`);
     let prevHash = '';
@@ -574,12 +599,21 @@ app.post('/test-run', async (req, res) => {
   const appDir = subdir ? `${p.frontend_path}/${subdir}` : p.frontend_path;
   const nextBin = `${appDir}/node_modules/.bin/next`;
   try {
+    // commit + push uncommitted changes
+    const gitLog = autoGitCommitPush(p.frontend_path, 'test-deploy');
+
+    // build before starting test server
+    const buildCmd = p.build_cmd
+      ? `cd ${p.frontend_path} && ${p.build_cmd}`
+      : `cd ${appDir} && npm install --production=false && npm run build`;
+    execSync(buildCmd, { timeout: 180000 });
+
     execSync(`pm2 stop test-${project} 2>/dev/null || true`);
     execSync(`pm2 delete test-${project} 2>/dev/null || true`);
     execSync(`pm2 start ${nextBin} --cwd ${appDir} --name test-${project} -- start -p ${testPort}`, { timeout: 30000 });
     let commit = '';
     try { commit = execSync(`git -C ${p.frontend_path} log --oneline -3 2>/dev/null`).toString().trim(); } catch(e) {}
-    res.json({ ok: true, result: `✓ Тест запущен на EU :${testPort}\nURL: http://147.45.75.59:${testPort}`, commit });
+    res.json({ ok: true, result: `${gitLog.join('\n')}\n✓ Тест запущен на EU :${testPort}\nURL: http://147.45.75.59:${testPort}`, commit });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
