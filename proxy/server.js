@@ -341,25 +341,34 @@ app.post('/deploy', async (req, res) => {
       // pm2 name on RU matches prod_path (letov-app) or project (life)
       const ruPm2Name = p.prod_path || pm2Name;
 
-      // Get SSH git URL from local remote (convert HTTPS → SSH automatically)
-      let gitUrl = '';
-      try {
-        const raw = execSync(`git -C ${repoPath} remote get-url origin 2>/dev/null`).toString().trim();
-        const m = raw.match(/[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?$/);
-        if (m) gitUrl = `git@github.com:${m[1]}.git`;
-      } catch(e) {}
+      // Get current branch
+      let branch = 'main';
+      try { branch = execSync(`git -C ${repoPath} rev-parse --abbrev-ref HEAD`).toString().trim(); } catch(e) {}
 
-      // Clone on first deploy, pull on subsequent ones
-      const initScript = gitUrl
-        ? `if [ ! -d ${ruDir}/.git ]; then git clone ${gitUrl} ${ruDir}; else git -C ${ruDir} pull; fi`
-        : `git -C ${ruDir} pull`;
-      execSync(`${RU_SSH} bash`, { input: initScript, timeout: 60000 });
-      log.push(`✓ git pull на RU (${ruDir})`);
+      // Bundle on EU, transfer to RU — no GitHub auth needed on RU
+      const bundleName = `deploy-${project}.bundle`;
+      execSync(`git -C ${repoPath} bundle create /tmp/${bundleName} ${branch}`, { timeout: 30000 });
+      execSync(`scp -i /root/.ssh/ru_key -o StrictHostKeyChecking=no /tmp/${bundleName} root@80.249.150.234:/tmp/`, { timeout: 30000 });
+
+      // Init git repo on RU if needed, sync from bundle (preserves untracked .env etc.)
+      const syncScript = `set -e
+mkdir -p ${ruDir}
+if [ ! -d ${ruDir}/.git ]; then
+  git init ${ruDir}
+  git -C ${ruDir} fetch /tmp/${bundleName} ${branch}:${branch}
+  git -C ${ruDir} checkout -f ${branch}
+else
+  git -C ${ruDir} fetch /tmp/${bundleName} ${branch}:${branch}
+  git -C ${ruDir} reset --hard ${branch}
+fi
+rm -f /tmp/${bundleName}`;
+      execSync(`${RU_SSH} bash`, { input: syncScript, timeout: 60000 });
+      log.push(`✓ git sync на RU (${ruDir})`);
 
       // Build on RU server
       const buildScript = p.build_cmd
-        ? `set -e; cd ${ruDir} && ${p.build_cmd}`
-        : `set -e; cd ${ruDir} && npm install --production=false && npm run build`;
+        ? `set -e\ncd ${ruDir} && ${p.build_cmd}`
+        : `set -e\ncd ${ruDir} && npm install --production=false && npm run build`;
       execSync(`${RU_SSH} bash`, { input: buildScript, timeout: 300000 });
       log.push('✓ build на RU');
 
