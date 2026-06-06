@@ -572,6 +572,34 @@ app.patch('/prompt/:project', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============ DS SCENARIOS ============
+app.get('/scenarios/:project', async (req, res) => {
+  const pool = projectPools[req.params.project];
+  if (!pool) return res.json({ content: null });
+  try {
+    const r = await pool.query(
+      "SELECT content FROM system_prompts WHERE id='deepseek_scenarios' LIMIT 1"
+    );
+    res.json({ content: r.rows[0]?.content ?? null });
+  } catch { res.json({ content: null }); }
+});
+
+app.patch('/scenarios/:project', async (req, res) => {
+  const pool = projectPools[req.params.project];
+  if (!pool) return res.status(404).json({ error: 'unknown project' });
+  const { content } = req.body;
+  if (typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+  try {
+    await pool.query(
+      `INSERT INTO system_prompts (id, content, updated_at, updated_by)
+       VALUES ('deepseek_scenarios', $1, now(), 'gromdash')
+       ON CONFLICT (id) DO UPDATE SET content=$1, updated_at=now(), updated_by='gromdash'`,
+      [content]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/ds-balance', async (req, res) => {
   const key = DEEPSEEK_KEYS.life;
   try {
