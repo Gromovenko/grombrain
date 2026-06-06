@@ -662,6 +662,21 @@ app.post('/test-run', async (req, res) => {
   const { project } = req.body;
   const p = await getProject(project);
   if (!p) return res.status(404).json({ error: 'unknown project' });
+
+  // gromdash is a static Vite site served by nginx — no PM2 test server
+  if (project === 'gromdash') {
+    try {
+      const gitLog = autoGitCommitPush(p.frontend_path, 'test-deploy');
+      const buildCmd = `cd ${p.frontend_path} && npm install --production=false && npm run build`;
+      execSync(buildCmd, { timeout: 180000 });
+      execSync(`cp -r ${p.frontend_path}/dist/. /var/www/dashboard/`, { timeout: 15000 });
+      let commit = '';
+      try { commit = execSync(`git -C ${p.frontend_path} log --oneline -3 2>/dev/null`).toString().trim(); } catch(e) {}
+      res.json({ ok: true, result: `${gitLog.join('\n')}\n✓ Обновлён /var/www/dashboard/ (nginx :80)`, commit });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+    return;
+  }
+
   const testPort = TEST_PORTS[project] || 3090;
   // For monorepo projects (letov), build_cmd starts with "cd subdir"
   const subdir = p.build_cmd?.match(/^cd ([^\s&]+)/)?.[1];
