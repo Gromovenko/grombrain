@@ -908,6 +908,53 @@ app.get('/claude-usage', (req, res) => {
   } catch(e) { res.status(500).json({error: e.message}); }
 });
 
+// ============ CLAUDE SESSION STREAM (live terminal output in dashboard) ============
+const CLAUDE_SESSION_DIR = '/root/.claude/projects/-root-gromovenko';
+
+function parseSessionEntry(entry) {
+  if (entry.type === 'assistant' && entry.message?.content) {
+    const parts = [];
+    for (const block of entry.message.content) {
+      if (block.type === 'text' && block.text?.trim())
+        parts.push({ type: 'text', content: block.text });
+      else if (block.type === 'tool_use')
+        parts.push({ type: 'tool', name: block.name, input: block.input, id: block.id });
+    }
+    if (parts.length) return { role: 'assistant', parts, ts: entry.timestamp };
+  }
+  if (entry.type === 'user' && entry.message?.content) {
+    for (const block of entry.message.content) {
+      if (block.type === 'tool_result') {
+        const content = Array.isArray(block.content)
+          ? block.content.map(c => c.text || '').join('\n')
+          : (block.content || '');
+        return { role: 'tool_result', toolUseId: block.tool_use_id, content, ts: entry.timestamp };
+      }
+      const text = block.text || (typeof block === 'string' ? block : null);
+      if (text?.trim() && !block.tool_use_id)
+        return { role: 'user', content: text, ts: entry.timestamp };
+    }
+  }
+  return null;
+}
+
+app.get('/claude-session', (req, res) => {
+  try {
+    const files = fs.readdirSync(CLAUDE_SESSION_DIR)
+      .filter(f => f.endsWith('.jsonl'))
+      .map(f => { const p = CLAUDE_SESSION_DIR + '/' + f; return { name: f, mtime: fs.statSync(p).mtimeMs, p }; })
+      .sort((a, b) => b.mtime - a.mtime);
+    if (!files.length) return res.json({ messages: [], lineCount: 0 });
+    const since = parseInt(req.query.since) || 0;
+    const lines = fs.readFileSync(files[0].p, 'utf8').split('\n').filter(Boolean);
+    const messages = [];
+    for (const line of lines.slice(since)) {
+      try { const m = parseSessionEntry(JSON.parse(line)); if (m) messages.push(m); } catch(e) {}
+    }
+    res.json({ messages, lineCount: lines.length, session: files[0].name });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.listen(3010, () => console.log('Gromovenko Proxy v2 :3010'));
 
 // Auto-update CLAUDE.md after any deploy
