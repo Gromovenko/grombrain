@@ -802,7 +802,13 @@ app.get('/ui-state', (req, res) => {
 });
 
 app.post('/ui-state', (req, res) => {
-  Object.assign(uiState, req.body);
+  if (req.body.sessions) {
+    uiState.sessions = Object.assign(uiState.sessions || {}, req.body.sessions);
+    const {sessions, ...rest} = req.body;
+    Object.assign(uiState, rest);
+  } else {
+    Object.assign(uiState, req.body);
+  }
   try { fs.writeFileSync(UI_STATE_FILE, JSON.stringify(uiState)); } catch(e) {}
   res.json({ ok: true });
 });
