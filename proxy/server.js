@@ -792,6 +792,21 @@ app.delete('/wg-peers/:pubkey', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============ UI STATE (active panel sync across devices) ============
+const UI_STATE_FILE = '/root/gromovenko/proxy/ui-state.json';
+let uiState = {};
+try { uiState = JSON.parse(fs.readFileSync(UI_STATE_FILE, 'utf8')); } catch(e) {}
+
+app.get('/ui-state', (req, res) => {
+  res.json(uiState);
+});
+
+app.post('/ui-state', (req, res) => {
+  Object.assign(uiState, req.body);
+  try { fs.writeFileSync(UI_STATE_FILE, JSON.stringify(uiState)); } catch(e) {}
+  res.json({ ok: true });
+});
+
 app.get('/claude-usage', (req, res) => {
   // Plan limits — Claude Max $100/mo, Sonnet 4.6 output tokens (≈5x $20 plan)
   const WIN_LIMIT  = 2_000_000;  // 5h window
