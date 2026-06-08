@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const { execSync, exec, spawn } = require('child_process');
 const multer = require('multer');
 const fs = require('fs');
+const path = require('path');
 const https = require('https');
 
 const app = express();
@@ -233,7 +234,7 @@ app.post('/claude/async', (req, res) => {
   const id = newJob();
   res.json({ jobId: id });
 
-  claudeRun(prompt, '/root/gromovenko', 1500000, 30, p => { jobs[id].partial = p.slice(-6000); })
+  claudeRun(prompt, '/root/gromovenko', 1500000, 100, p => { jobs[id].partial = p.slice(-6000); })
     .then(result => { jobs[id] = { status: 'done', text: result, created: jobs[id].created }; })
     .catch(e => { jobs[id] = { status: 'error', error: e.message, created: jobs[id].created }; });
 });
@@ -595,6 +596,126 @@ app.patch('/scenarios/:project', async (req, res) => {
        ON CONFLICT (id) DO UPDATE SET content=$1, updated_at=now(), updated_by='gromdash'`,
       [content]
     );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============ NODE PROMPTS (per-step DS prompts, stored as JSON files) ============
+const NP_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(NP_DIR)) fs.mkdirSync(NP_DIR, { recursive: true });
+
+app.get('/node-prompts/:project', (req, res) => {
+  const file = path.join(NP_DIR, `np-${req.params.project}.json`);
+  try { res.json(fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}); }
+  catch(e) { res.json({}); }
+});
+
+app.patch('/node-prompts/:project', (req, res) => {
+  const file = path.join(NP_DIR, `np-${req.params.project}.json`);
+  try {
+    const existing = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+    fs.writeFileSync(file, JSON.stringify({ ...existing, ...req.body }, null, 2));
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/node-scenarios/:project', (req, res) => {
+  const file = path.join(NP_DIR, `ns-${req.params.project}.json`);
+  try { res.json(fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}); }
+  catch(e) { res.json({}); }
+});
+
+app.patch('/node-scenarios/:project', (req, res) => {
+  const file = path.join(NP_DIR, `ns-${req.params.project}.json`);
+  try {
+    const existing = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+    fs.writeFileSync(file, JSON.stringify({ ...existing, ...req.body }, null, 2));
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============ NOCODB — flow diagrams + mechanisms ============
+const NC_URL = 'http://localhost:8088';
+const NC_TOKEN = process.env.NOCODB_TOKEN || '';
+const NC_BID = process.env.NOCODB_BASE_ID || '';
+const NC_T = {
+  flow_nodes: 'm6gj30otp9porfw',
+  flow_edges: 'mf5k5xsm1e30ufx',
+  mechanisms: 'm3w7w9qskkf2xgt',
+  project_mechanisms: 'mqmx1q9xya2qcgt'
+};
+
+async function ncGet(tableId, where='') {
+  const url = `${NC_URL}/api/v1/db/data/noco/${NC_BID}/${tableId}?limit=200${where}`;
+  const r = await fetch(url, { headers: { 'xc-token': NC_TOKEN } });
+  const d = await r.json();
+  return d.list || [];
+}
+
+async function ncPost(tableId, body) {
+  const r = await fetch(`${NC_URL}/api/v1/db/data/noco/${NC_BID}/${tableId}`, {
+    method: 'POST', headers: { 'xc-token': NC_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+async function ncPatch(tableId, rowId, body) {
+  const r = await fetch(`${NC_URL}/api/v1/db/data/noco/${NC_BID}/${tableId}/${rowId}`, {
+    method: 'PATCH', headers: { 'xc-token': NC_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+app.get('/flow/:project', async (req, res) => {
+  try {
+    const proj = encodeURIComponent(req.params.project);
+    const [nodes, edges] = await Promise.all([
+      ncGet(NC_T.flow_nodes, `&where=(project,eq,${proj})&sort=node_order`),
+      ncGet(NC_T.flow_edges, `&where=(project,eq,${proj})`)
+    ]);
+    res.json({ nodes, edges });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/mechanisms', async (req, res) => {
+  try {
+    const [mechs, pm] = await Promise.all([
+      ncGet(NC_T.mechanisms),
+      ncGet(NC_T.project_mechanisms)
+    ]);
+    const projMap = {};
+    pm.forEach(r => { if(r.active) { if(!projMap[r.mechanism_slug]) projMap[r.mechanism_slug]=[]; projMap[r.mechanism_slug].push(r.project); }});
+    res.json(mechs.map(m => ({ ...m, projects: projMap[m.slug] || [] })));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/project-mechanisms/:project', async (req, res) => {
+  try {
+    const proj = encodeURIComponent(req.params.project);
+    const [mechs, pm] = await Promise.all([
+      ncGet(NC_T.mechanisms),
+      ncGet(NC_T.project_mechanisms, `&where=(project,eq,${proj})`)
+    ]);
+    const active = new Set(pm.filter(r=>r.active).map(r=>r.mechanism_slug));
+    const notes = {};
+    pm.forEach(r=>{ notes[r.mechanism_slug]=r.usage_notes||''; });
+    res.json(mechs.map(m => ({ ...m, active: active.has(m.slug), usage_notes: notes[m.slug]||'' })));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/project-mechanisms/:project', async (req, res) => {
+  try {
+    const proj = req.params.project;
+    const { slug, active, usage_notes='' } = req.body;
+    const existing = await ncGet(NC_T.project_mechanisms,
+      `&where=(project,eq,${encodeURIComponent(proj)})~and(mechanism_slug,eq,${encodeURIComponent(slug)})`);
+    if (existing.length > 0) {
+      await ncPatch(NC_T.project_mechanisms, existing[0].Id, { active, usage_notes });
+    } else {
+      await ncPost(NC_T.project_mechanisms, { project: proj, mechanism_slug: slug, active, usage_notes });
+    }
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1052,7 +1173,7 @@ const SCHEMA_QUERY = `
 app.get('/schema/:project', async (req, res) => {
   const proj = req.params.project;
   try {
-    if (proj === 'soundrussian') {
+    if (proj === 'soundrussian' || proj === 'soundrussian.uz') {
       // Supabase: call the RPC function via REST
       const url = 'https://zouibevkchvwlupigamz.supabase.co/rest/v1/rpc/get_schema_info';
       const r = await fetch(url, {
