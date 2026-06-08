@@ -955,6 +955,41 @@ app.get('/claude-session', (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============ WHISPER TRANSCRIPTION ============
+// Forwards audio to local Whisper API at :8090 (from github.com/openai/whisper, cloned to /opt/whisper-src)
+app.post('/whisper/transcribe', async (req, res) => {
+  try {
+    const WHISPER = process.env.WHISPER_API_URL || 'http://127.0.0.1:8090';
+    const lang = req.query.lang || '';
+
+    // Stream the raw body to whisper (multipart/form-data passthrough)
+    const whisperUrl = `${WHISPER}/transcribe${lang ? `?lang=${lang}` : ''}`;
+    const chunks = [];
+    req.on('data', c => chunks.push(c));
+    await new Promise(r => req.on('end', r));
+    const body = Buffer.concat(chunks);
+
+    const r = await fetch(whisperUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': req.headers['content-type'],
+        'Content-Length': body.length,
+      },
+      body,
+    });
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/whisper/health', async (req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:8090/health');
+    const data = await r.json();
+    res.json(data);
+  } catch(e) { res.status(503).json({ ok: false, error: e.message }); }
+});
+
 // ============ SCHEMA / ERD ============
 // Returns tables+columns+FK relations for a project (for NocoDB mini-ERD in gromdash)
 const SCHEMA_QUERY = `
