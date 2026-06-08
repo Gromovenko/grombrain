@@ -955,6 +955,95 @@ app.get('/claude-session', (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============ SCHEMA / ERD ============
+// Returns tables+columns+FK relations for a project (for NocoDB mini-ERD in gromdash)
+const SCHEMA_QUERY = `
+  WITH cols AS (
+    SELECT
+      c.table_name,
+      jsonb_agg(
+        jsonb_build_object(
+          'name',     c.column_name,
+          'type',     c.data_type,
+          'nullable', (c.is_nullable = 'YES'),
+          'pk', EXISTS(
+            SELECT 1 FROM information_schema.key_column_usage kcu2
+            JOIN information_schema.table_constraints tc2
+              ON tc2.constraint_name = kcu2.constraint_name
+              AND tc2.table_schema = kcu2.table_schema
+            WHERE kcu2.table_schema = 'public'
+              AND kcu2.table_name   = c.table_name
+              AND kcu2.column_name  = c.column_name
+              AND tc2.constraint_type = 'PRIMARY KEY'
+          )
+        ) ORDER BY c.ordinal_position
+      ) AS columns
+    FROM information_schema.columns c
+    WHERE c.table_schema = 'public'
+    GROUP BY c.table_name
+  ),
+  tbls AS (
+    SELECT jsonb_agg(
+      jsonb_build_object('name', t.table_name, 'columns', COALESCE(cols.columns, '[]'::jsonb))
+      ORDER BY t.table_name
+    ) AS tables
+    FROM information_schema.tables t
+    LEFT JOIN cols ON cols.table_name = t.table_name
+    WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+  ),
+  rels AS (
+    SELECT jsonb_agg(
+      jsonb_build_object(
+        'from_table', kcu.table_name,
+        'from_col',   kcu.column_name,
+        'to_table',   ccu.table_name,
+        'to_col',     ccu.column_name
+      )
+    ) AS relations
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+      ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+    JOIN information_schema.constraint_column_usage ccu
+      ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+    WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+  )
+  SELECT jsonb_build_object(
+    'tables',    COALESCE(tbls.tables,    '[]'::jsonb),
+    'relations', COALESCE(rels.relations, '[]'::jsonb)
+  ) AS schema
+  FROM tbls, rels
+`;
+
+app.get('/schema/:project', async (req, res) => {
+  const proj = req.params.project;
+  try {
+    if (proj === 'soundrussian') {
+      // Supabase: call the RPC function via REST
+      const url = 'https://zouibevkchvwlupigamz.supabase.co/rest/v1/rpc/get_schema_info';
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.SR_SERVICE_KEY,
+          'Authorization': `Bearer ${process.env.SR_SERVICE_KEY}`,
+        },
+        body: JSON.stringify({}),
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        return res.status(500).json({ error: `Supabase RPC error: ${txt}` });
+      }
+      const data = await r.json();
+      return res.json(data);
+    }
+
+    const pool = proj === 'registry' ? registry : projectPools[proj];
+    if (!pool) return res.status(404).json({ error: `Unknown project: ${proj}` });
+    const r = await pool.query(SCHEMA_QUERY);
+    res.json(r.rows[0].schema);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.listen(3010, () => console.log('Gromovenko Proxy v2 :3010'));
 
 // Auto-update CLAUDE.md after any deploy
